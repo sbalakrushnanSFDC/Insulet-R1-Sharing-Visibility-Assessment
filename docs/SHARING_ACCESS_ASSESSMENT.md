@@ -1,10 +1,10 @@
-# Salesforce Sharing, Visibility & Access-Control Assessment — R2
+# Salesforce Sharing, Visibility & Access-Control Assessment — R1v1.1
 ## Insulet Corporation — DevInt2 Sandbox (Unlimited Edition)
 
 **Org ID:** `00Dbb000006gUxVEAU` | **Instance:** `omnipod--devint2.sandbox.my.salesforce.com`  
-**R1 Date:** March 9, 2026 | **R2 Gap-Fill Date:** March 9, 2026 | **API Version:** 66.0
+**R1 Date:** March 9, 2026 | **R1v1.1 Gap-Fill Date:** March 9, 2026 | **API Version:** 66.0
 
-> **R2 Changes from R1:** This revision incorporates 19 additional metadata types retrieved in the gap-fill run (SharingRules, Group, Queue, Territory2Model, Territory2Type, SharingSet, DelegateGroup, DuplicateRule, FlowDefinition, Network, CustomSite, CspTrustedSite, RestrictionRule, and others). All 6 consistency checks passed. 3 non-blocking corrections were applied from validation rules V-03 and V-06. Key discovery: a `SharingSet` ("External_Trainer_Access") exists and is the primary community baseline access mechanism — not just Apex sharing as stated in R1.
+> **R1v1.1 Changes from R1:** This revision incorporates 19 additional metadata types retrieved in the gap-fill run (SharingRules, Group, Queue, Territory2Model, Territory2Type, SharingSet, DelegateGroup, DuplicateRule, FlowDefinition, Network, CustomSite, CspTrustedSite, RestrictionRule, and others). All 6 consistency checks passed. 3 non-blocking corrections were applied from validation rules V-03 and V-06. Key discovery: a `SharingSet` ("External_Trainer_Access") exists and is the primary community baseline access mechanism — not just Apex sharing as stated in R1.
 
 > **Sandbox Caveat:** DevInt2 sandbox. Record-level counts may differ from production. Structural/metadata findings are representative of the production configuration.
 
@@ -20,19 +20,19 @@ Insulet's Salesforce org implements a **defense-in-depth, role-based sharing mod
 2. **37 declarative sharing rules** (criteria-based) as the dominant record-opening mechanism, all scoped to specific RecordTypes and targeted at named roles/role groups — not broad open sharing.
 3. **Layered community access** — External Trainer access is composed of: SharingSet baseline Read, Apex-managed Edit escalation on Training acceptance, and PortalImplicit. This is a well-architected layered model.
 
-## Key Findings Revised/Added in R2
+## Key Findings Revised/Added in R1v1.1
 
 | # | Change | Evidence Source |
 |---|--------|----------------|
-| R2-CORR-1 | SharingSet "External_Trainer_Access" exists — grants Account:Read + Reimbursement__c:Edit to External Trainers. R1 stated community relied solely on Apex sharing. **CORRECTED.** | Retrieved `External_Trainer_Access.sharingSet-meta.xml` |
-| R2-CORR-2 | No sharing rules exist for Reimbursement__c — R1 implied rule-based access for field reps. Internal access is owner-only. **CORRECTED.** | All 407 SharingRules XML files parsed; 11 objects have rules (Reimbursement__c not among them) |
-| R2-CORR-3 | No MutingPermissionSets exist in this org. 0 records, 0 files, 0 PSG references. Previously unconfirmed. | SOQL + XML retrieval both confirm 0 |
-| R2-NEW-1 | Territory assignment is entirely **manual** (data-driven, not criteria/Apex rules). No Territory2Rule XML files exist. 180 Territory2AssociationManual records confirm manual process. | Territory2Model XML + prior SOQL |
-| R2-NEW-2 | **RestrictionRule: 0 configured** (confirmed by retrieval, not just catalog absence). | package-governance.xml retrieve → 0 RestrictionRule components |
-| R2-NEW-3 | **TransactionSecurityPolicy: 0 configured**. No real-time event-driven security controls. | SOQL returns 0 records |
-| R2-NEW-4 | **DelegateGroup "Log_In_As"** exists with `loginAccess=true`. Delegates can log in as other users — extends beyond the admin-login-as capability to a group of delegated users. | Retrieved `Log_In_As.delegateGroup-meta.xml` |
-| R2-NEW-5 | **Custom Patient Duplicate Rule** (`Patient_Duplicate_Person_Account_Rule`) is ACTIVE with `securityOption=BypassSharingRules` — duplicate detection bypasses sharing during dedup evaluation. | Retrieved DuplicateRule XML |
-| R2-NEW-6 | **Only 1 CSP Trusted Site** (`omnipod.com`) across all contexts. Very limited external connectivity allowed via CSP. | Retrieved `Omnipod.cspTrustedSite-meta.xml` |
+| R1v1.1-CORR-1 | SharingSet "External_Trainer_Access" exists — grants Account:Read + Reimbursement__c:Edit to External Trainers. R1 stated community relied solely on Apex sharing. **CORRECTED.** | Retrieved `External_Trainer_Access.sharingSet-meta.xml` |
+| R1v1.1-CORR-2 | No sharing rules exist for Reimbursement__c — R1 implied rule-based access for field reps. Internal access is owner-only. **CORRECTED.** | All 407 SharingRules XML files parsed; 11 objects have rules (Reimbursement__c not among them) |
+| R1v1.1-CORR-3 | No MutingPermissionSets exist in this org. 0 records, 0 files, 0 PSG references. Previously unconfirmed. | SOQL + XML retrieval both confirm 0 |
+| R1v1.1-NEW-1 | Territory assignment is entirely **manual** (data-driven, not criteria/Apex rules). No Territory2Rule XML files exist. 180 Territory2AssociationManual records confirm manual process. | Territory2Model XML + prior SOQL |
+| R1v1.1-NEW-2 | **RestrictionRule: 0 configured** (confirmed by retrieval, not just catalog absence). | package-governance.xml retrieve → 0 RestrictionRule components |
+| R1v1.1-NEW-3 | **TransactionSecurityPolicy: 0 configured**. No real-time event-driven security controls. | SOQL returns 0 records |
+| R1v1.1-NEW-4 | **DelegateGroup "Log_In_As"** exists with `loginAccess=true`. Delegates can log in as other users — extends beyond the admin-login-as capability to a group of delegated users. | Retrieved `Log_In_As.delegateGroup-meta.xml` |
+| R1v1.1-NEW-5 | **Custom Patient Duplicate Rule** (`Patient_Duplicate_Person_Account_Rule`) is ACTIVE with `securityOption=BypassSharingRules` — duplicate detection bypasses sharing during dedup evaluation. | Retrieved DuplicateRule XML |
+| R1v1.1-NEW-6 | **Only 1 CSP Trusted Site** (`omnipod.com`) across all contexts. Very limited external connectivity allowed via CSP. | Retrieved `Omnipod.cspTrustedSite-meta.xml` |
 
 ## Top Risks — Updated Priority Table
 
@@ -40,14 +40,14 @@ Insulet's Salesforce org implements a **defense-in-depth, role-based sharing mod
 |----------|---------|----------|----------------|
 | **CRITICAL** | Odaseva perm set: ViewAll + ModifyAll + ManageUsers + AuthorApex | Live SOQL (R1) | Rotate credentials, add IP restriction |
 | **CRITICAL** | 7 OrgSync staging objects OWD = ReadWrite internally | EntityDefinition Tooling API (R1) | Restrict to Private; grant only to integration users |
-| **HIGH** | `enableSecureGuestAccess = false` | Sharing.settings + CustomSite XML (R2) | Enable Secure Guest Access; re-test portal |
+| **HIGH** | `enableSecureGuestAccess = false` | Sharing.settings + CustomSite XML (R1v1.1) | Enable Secure Guest Access; re-test portal |
 | **HIGH** | Dev Support + Functional Analyst PermSets: ViewAllData=true for ~14 business users | PermissionSet SOQL (R1) | Replace with per-object ViewAllRecords |
-| **HIGH** | **[NEW R2]** DelegateGroup "Log_In_As" has `loginAccess=true` — delegates can impersonate users beyond admin scope | DelegateGroup XML | Audit members of this group; restrict or remove |
-| **HIGH** | **[NEW R2]** 0 TransactionSecurityPolicies — no real-time exfiltration controls | SOQL (R2) | Implement minimum: API Anomaly + Report Download policies |
+| **HIGH** | **[NEW R1v1.1]** DelegateGroup "Log_In_As" has `loginAccess=true` — delegates can impersonate users beyond admin scope | DelegateGroup XML | Audit members of this group; restrict or remove |
+| **HIGH** | **[NEW R1v1.1]** 0 TransactionSecurityPolicies — no real-time exfiltration controls | SOQL (R1v1.1) | Implement minimum: API Anomaly + Report Download policies |
 | **HIGH** | CTI_Integration_Access + Query_AllFiles: ViewAllData=true for integration roles | PermissionSet SOQL (R1) | Replace with object-scoped permissions |
 | **MEDIUM** | Manual Account shares (68) lack lifecycle governance | AccountShare SOQL (R1) | Scheduled cleanup job |
-| **MEDIUM** | Patient Duplicate Rule has `securityOption=BypassSharingRules` | DuplicateRule XML (R2) | Review if bypass is still needed |
-| **LOW** | SharingRules not previously in version control | Gap-fill (R2) — now retrieved | Add SharingRules to manifests permanently (done in R2) |
+| **MEDIUM** | Patient Duplicate Rule has `securityOption=BypassSharingRules` | DuplicateRule XML (R1v1.1) | Review if bypass is still needed |
+| **LOW** | SharingRules not previously in version control | Gap-fill (R1v1.1) — now retrieved | Add SharingRules to manifests permanently (done in R1v1.1) |
 
 ---
 
@@ -71,7 +71,7 @@ Insulet's Salesforce org implements a **defense-in-depth, role-based sharing mod
 
 ## 2.2 Territory Management 2.0
 
-**Key R2 Finding: Territory assignment is entirely manual — no Apex or criteria-based assignment rules.**
+**Key R1v1.1 Finding: Territory assignment is entirely manual — no Apex or criteria-based assignment rules.**
 
 The active `Insulet_Territories` model contains only a model header XML. The 100 territories and 110 user-territory associations (plus 180 Territory2AssociationManual records) are all maintained as org data, not declarative metadata. This means:
 
@@ -141,7 +141,7 @@ All 37 rules are criteria-based or owner-based. **Zero guest sharing rules or te
 
 ## 2.4 Experience Cloud — Trainer Portal (Revised)
 
-**R2 CORRECTION: SharingSet is the primary baseline access mechanism.**
+**R1v1.1 CORRECTION: SharingSet is the primary baseline access mechanism.**
 
 The Trainer Portal community access is now fully documented as a three-layer model:
 
@@ -172,13 +172,13 @@ The Trainer Portal community access is now fully documented as a three-layer mod
 **CSP Trusted Sites (1 configured):**
 - `omnipod.com` — all contexts (connect-src, font-src, frame-src, img-src) — for embedded Omnipod docs
 
-## 2.5 DelegateGroup — "Log_In_As" (NEW R2)
+## 2.5 DelegateGroup — "Log_In_As" (NEW R1v1.1)
 
 A single DelegateGroup named "Log_In_As" exists with `loginAccess = true`. This extends the ability to impersonate other users beyond just the System Administrator profile — any user who is a member of this delegate group can log in as the users they are delegated to manage.
 
 **Risk:** In combination with `enableAdminLoginAsAnyUser = true` on the org, this means login-as capability is effectively distributed to a group of delegated administrators. The membership of this group needs to be audited in Production.
 
-## 2.6 Duplicate Rules and Data Model Integrity (NEW R2)
+## 2.6 Duplicate Rules and Data Model Integrity (NEW R1v1.1)
 
 **9 DuplicateRules retrieved:**
 
@@ -196,7 +196,7 @@ A single DelegateGroup named "Log_In_As" exists with `loginAccess = true`. This 
 
 **Security finding:** `Patient_Duplicate_Person_Account_Rule` is active and uses `securityOption = BypassSharingRules`. During duplicate detection, the matching engine will see ALL patient person accounts regardless of sharing — meaning a user who doesn't have sharing access to a specific patient account will still see it flagged as a duplicate. This is a data visibility side-channel specific to the dedup workflow.
 
-## 2.7 Transaction Security Policies — Zero Configured (NEW R2)
+## 2.7 Transaction Security Policies — Zero Configured (NEW R1v1.1)
 
 0 TransactionSecurityPolicies exist in this org. This means:
 - No real-time monitoring for anomalous data downloads (e.g., a user exporting all patient records)
@@ -308,7 +308,7 @@ flowchart TD
     Apex -->|No| Denied
 ```
 
-## 3.4 Community Access Architecture (CORRECTED R2)
+## 3.4 Community Access Architecture (CORRECTED R1v1.1)
 
 ```mermaid
 flowchart LR
@@ -439,7 +439,7 @@ Campaign,Private,CRUDVAMA,R_SR_hierarchy,R_SR_hierarchy,No,All_ViewAllData,No,No
 - **Opportunity:** Owner access only
 - **Multiple queues:** DTC-Incomplete, DTC Open, DTC Dr Discussion, DTC Lead Generation, DTC Partial Match, Inside Sales Specialist, NCS-DTC Call Back, NCS-DTC Incomplete
 
-### External Trainer (Profile: External Trainer, PSG: Third_Party_Trainers) — CORRECTED R2
+### External Trainer (Profile: External Trainer, PSG: Third_Party_Trainers) — CORRECTED R1v1.1
 - **Account:** **SharingSet(Read)** where Account = Trainer's Related Account + **Apex(Edit)** when Training accepted. *R1 incorrectly stated only Apex.*
 - **Reimbursement__c:** **SharingSet(Edit)** where Reimbursement__c.Trainer__c = User.Account. *This was MISSING from R1.*
 - **Training__c:** Owner (they own their training records) + Read via Account SharingSet link
@@ -477,7 +477,7 @@ OrgSync_Integration,Integration API Only,OrgSync_User_Access,No,No,None,CRUD_via
 
 ---
 
-# DELIVERABLE 6 — SHARING MECHANISM CATALOG (R2 — 33 Mechanisms)
+# DELIVERABLE 6 — SHARING MECHANISM CATALOG (R1v1.1 — 33 Mechanisms)
 
 | # | Mechanism | Type | Objects Affected | Evidence Source | Active | Confidence |
 |---|-----------|------|-----------------|----------------|--------|------------|
@@ -488,18 +488,18 @@ OrgSync_Integration,Integration API Only,OrgSync_User_Access,No,No,None,CRUD_via
 | 5 | Role Hierarchy (implicit upward) | Implicit | All Private/CtrlByParent objects | UserRole SOQL (26 roles) | Yes | High |
 | 6 | Territory Management 2.0 (Insulet_Territories) | Territory | Account=Edit, Contact=Edit, Lead=Read | Territory2Model XML + AccountShare Territory aggregate | Yes (Active) | High |
 | 7 | Territory2AssociationManual overrides | Territory | Account | AccountShare RowCause=Territory2AssociationManual (180) | Yes | High |
-| 8 | Sharing Rules — Account (9 criteria-based) | Declarative rules | Account | Account.sharingRules-meta.xml (R2) | Yes | High |
-| 9 | Sharing Rules — Lead (4 criteria-based) | Declarative rules | Lead | Lead.sharingRules-meta.xml (R2) | Yes | High |
-| 10 | Sharing Rules — Case (3 criteria-based) | Declarative rules | Case (HCP_Update_Request only) | Case.sharingRules-meta.xml (R2) | Yes | High |
-| 11 | Sharing Rules — Opportunity (1 criteria-based) | Declarative rules | Opportunity (NCS_Opportunity only) | Opportunity.sharingRules-meta.xml (R2) | Yes | High |
-| 12 | Sharing Rules — Campaign (4 owner-based) | Declarative rules | Campaign | Campaign.sharingRules-meta.xml (R2) | Yes | High |
-| 13 | Sharing Rules — Asset (3 criteria-based) | Declarative rules | Asset (Controller/Sensor_Type) | Asset.sharingRules-meta.xml (R2) | Yes | High |
-| 14 | Sharing Rules — ContactContactRelation (3 owner) | Declarative rules | ContactContactRelation | Retrieved XML (R2) | Yes | High |
-| 15 | Sharing Rules — PartyConsent (3 owner) | Declarative rules | PartyConsent | Retrieved XML (R2) | Yes | High |
-| 16 | Sharing Rules — DataUsePurpose, HealthcarePractitionerFacility, Individual | Declarative rules | Clinical data objects | Retrieved XML (R2) | Yes | High |
+| 8 | Sharing Rules — Account (9 criteria-based) | Declarative rules | Account | Account.sharingRules-meta.xml (R1v1.1) | Yes | High |
+| 9 | Sharing Rules — Lead (4 criteria-based) | Declarative rules | Lead | Lead.sharingRules-meta.xml (R1v1.1) | Yes | High |
+| 10 | Sharing Rules — Case (3 criteria-based) | Declarative rules | Case (HCP_Update_Request only) | Case.sharingRules-meta.xml (R1v1.1) | Yes | High |
+| 11 | Sharing Rules — Opportunity (1 criteria-based) | Declarative rules | Opportunity (NCS_Opportunity only) | Opportunity.sharingRules-meta.xml (R1v1.1) | Yes | High |
+| 12 | Sharing Rules — Campaign (4 owner-based) | Declarative rules | Campaign | Campaign.sharingRules-meta.xml (R1v1.1) | Yes | High |
+| 13 | Sharing Rules — Asset (3 criteria-based) | Declarative rules | Asset (Controller/Sensor_Type) | Asset.sharingRules-meta.xml (R1v1.1) | Yes | High |
+| 14 | Sharing Rules — ContactContactRelation (3 owner) | Declarative rules | ContactContactRelation | Retrieved XML (R1v1.1) | Yes | High |
+| 15 | Sharing Rules — PartyConsent (3 owner) | Declarative rules | PartyConsent | Retrieved XML (R1v1.1) | Yes | High |
+| 16 | Sharing Rules — DataUsePurpose, HealthcarePractitionerFacility, Individual | Declarative rules | Clinical data objects | Retrieved XML (R1v1.1) | Yes | High |
 | 17 | Apex Managed Sharing — TrainingSharingHandler | Programmatic | Account (Edit for External Trainers) | Code review — Training trigger | Yes | High |
 | 18 | Apex Managed Sharing — ObservationSharingHandler | Programmatic | Account (Edit for Delegate Observer) | Code review — Observation trigger | Yes | High |
-| 19 | SharingSet — External_Trainer_Access | Community | Account (Read), Reimbursement__c (Edit) | External_Trainer_Access.sharingSet-meta.xml (R2) | Yes | High |
+| 19 | SharingSet — External_Trainer_Access | Community | Account (Read), Reimbursement__c (Edit) | External_Trainer_Access.sharingSet-meta.xml (R1v1.1) | Yes | High |
 | 20 | Manual Sharing (AccountShare Manual) | Manual | Account | AccountShare RowCause=Manual (68) | Yes | High |
 | 21 | Implicit Parent Sharing | Implicit | Contact, Opp, Case via Account | AccountShare RowCause=ImplicitParent (1,905) | Yes | High |
 | 22 | Portal Implicit Sharing | Community | Account | AccountShare RowCause=PortalImplicit (68) | Yes | High |
@@ -507,29 +507,29 @@ OrgSync_Integration,Integration API Only,OrgSync_User_Access,No,No,None,CRUD_via
 | 24 | PermissionsViewAllData | Object bypass | All objects | PermissionSet SOQL (9 PSets) | Yes | High |
 | 25 | PermissionsModifyAllData | Object bypass | All objects | PermissionSet SOQL (2: Odaseva + Admin profile) | Yes | High |
 | 26 | Per-Object ViewAllRecords | Object-level bypass | Account (15), Campaign (17), OrgSync (8-10 each) | ObjectPermissions SOQL (2,000 records) | Yes | High |
-| 27 | Public Groups (11) — sharing rule targets | Group | Used as targets in sharing rules above | Group XML (R2) | Yes | High |
-| 28 | Queue-based ownership | Queue | Lead (8 queues), Task (10), Case (1), Reimbursement__c (1) | Queue XML + QueueSobject SOQL (R2) | Yes | High |
+| 27 | Public Groups (11) — sharing rule targets | Group | Used as targets in sharing rules above | Group XML (R1v1.1) | Yes | High |
+| 28 | Queue-based ownership | Queue | Lead (8 queues), Task (10), Case (1), Reimbursement__c (1) | Queue XML + QueueSobject SOQL (R1v1.1) | Yes | High |
 | 29 | AccountContactRelation (multi-account) | Relationship | Contact↔Account (Patient→Practice) | OrgSync_Patient_ACRService.cls | Yes | High |
-| 30 | Experience Cloud (Trainer Portal) | Community | Training__c, Observation__c, Account | Network XML + CustomSite XML (R2) | Yes | High |
-| 31 | DelegateGroup "Log_In_As" (loginAccess=true) | Admin bypass | All (via user impersonation) | Log_In_As.delegateGroup-meta.xml (R2) | Yes | High |
-| 32 | DuplicateRule BypassSharingRules (Patient dedup) | Security bypass | Account (PersonAccount/Patient type) | DuplicateRule XML (R2) | Yes | High |
-| 33 | **ABSENT: TransactionSecurityPolicy** | Governance gap | All objects | SOQL returns 0 (R2) | No | High |
+| 30 | Experience Cloud (Trainer Portal) | Community | Training__c, Observation__c, Account | Network XML + CustomSite XML (R1v1.1) | Yes | High |
+| 31 | DelegateGroup "Log_In_As" (loginAccess=true) | Admin bypass | All (via user impersonation) | Log_In_As.delegateGroup-meta.xml (R1v1.1) | Yes | High |
+| 32 | DuplicateRule BypassSharingRules (Patient dedup) | Security bypass | Account (PersonAccount/Patient type) | DuplicateRule XML (R1v1.1) | Yes | High |
+| 33 | **ABSENT: TransactionSecurityPolicy** | Governance gap | All objects | SOQL returns 0 (R1v1.1) | No | High |
 
 **Confirmed Absent (Not Risks but Closed Findings):**
-- MutingPermissionSet: 0 in org (Confirmed R2)
-- RestrictionRule: 0 in org (Confirmed R2)
-- ScopingRule: Not supported at API v66 (Confirmed R2)
-- Territory2Rule (criteria-based): Not in use; all assignment is manual (Confirmed R2)
+- MutingPermissionSet: 0 in org (Confirmed R1v1.1)
+- RestrictionRule: 0 in org (Confirmed R1v1.1)
+- ScopingRule: Not supported at API v66 (Confirmed R1v1.1)
+- Territory2Rule (criteria-based): Not in use; all assignment is manual (Confirmed R1v1.1)
 
 ---
 
-# DELIVERABLE 7 — FINDINGS AND RECOMMENDATIONS (R2)
+# DELIVERABLE 7 — FINDINGS AND RECOMMENDATIONS (R1v1.1)
 
 ## CRITICAL Findings
 
 ### F-001: Odaseva_Service_User_Permissions — Full System Bypass *(unchanged from R1)*
 - **Evidence:** PermissionSet SOQL: ViewAllData=true, ModifyAllData=true, ManageUsers=true, AuthorApex=true, IsOwnedByProfile=false
-- **Compounded by R2:** 0 TransactionSecurityPolicies → no monitoring of this account's activity
+- **Compounded by R1v1.1:** 0 TransactionSecurityPolicies → no monitoring of this account's activity
 - **Recommendation:** IP restriction + credential rotation + scope reduction + implement Transaction Security Policy for API download anomaly detection
 
 ### F-002: 7 OrgSync Staging Objects with Internal OWD = ReadWrite *(unchanged from R1)*
@@ -540,9 +540,9 @@ OrgSync_Integration,Integration API Only,OrgSync_User_Access,No,No,None,CRUD_via
 
 ## HIGH Findings
 
-### F-003: enableSecureGuestAccess = false *(confirmed with dual evidence in R2)*
+### F-003: enableSecureGuestAccess = false *(confirmed with dual evidence in R1v1.1)*
 - **Evidence (R1):** `Sharing.settings-meta.xml` line 16
-- **Evidence (R2):** `Trainer_Portal.site-meta.xml` — LWR architecture; `Network` XML `enableSiteAsContainer=true`
+- **Evidence (R1v1.1):** `Trainer_Portal.site-meta.xml` — LWR architecture; `Network` XML `enableSiteAsContainer=true`
 - **Recommendation:** Enable Secure Guest Access; test portal login and self-reg flows post-change
 
 ### F-004: Dev Support + Functional Analyst: ViewAllData grants to business users *(unchanged from R1)*
@@ -551,15 +551,15 @@ OrgSync_Integration,Integration API Only,OrgSync_User_Access,No,No,None,CRUD_via
 
 ### F-006: 177 System Administrator users in sandbox
 
-### F-007 [NEW R2]: DelegateGroup "Log_In_As" Has loginAccess=true
+### F-007 [NEW R1v1.1]: DelegateGroup "Log_In_As" Has loginAccess=true
 - **Finding:** A DelegateGroup named "Log_In_As" with `loginAccess=true` was retrieved. Combined with `enableAdminLoginAsAnyUser=true`, this means a group of delegated admins can impersonate users without being System Administrators.
-- **Evidence:** `force-app/main/default/delegateGroups/Log_In_As.delegateGroup-meta.xml` (R2 retrieval)
+- **Evidence:** `force-app/main/default/delegateGroups/Log_In_As.delegateGroup-meta.xml` (R1v1.1 retrieval)
 - **Risk:** If misused, this is a lateral privilege escalation path. In production the membership of this group must be audited.
 - **Recommendation:** Audit production members of this group; ensure all are known trusted admins; add to privileged access review cadence
 
-### F-008 [NEW R2]: Zero TransactionSecurityPolicies — No Real-Time Security Controls
+### F-008 [NEW R1v1.1]: Zero TransactionSecurityPolicies — No Real-Time Security Controls
 - **Finding:** SOQL on TransactionSecurityPolicy returns 0 records. No real-time monitoring for data exfiltration, mass download, or API anomalies.
-- **Evidence:** Standard SOQL (R2 gap script)
+- **Evidence:** Standard SOQL (R1v1.1 gap script)
 - **Risk:** HIGH — combined with F-001 (Odaseva full access), a compromised service account could export the entire org undetected
 - **Recommendation:** Implement at minimum: (1) API Anomaly detection policy blocking users who call Data Export or list views > N times/hour; (2) Report Download policy alerting on large exports; (3) Login IP change detection
 
@@ -575,13 +575,13 @@ OrgSync_Integration,Integration API Only,OrgSync_User_Access,No,No,None,CRUD_via
 
 ### F-012: Territory Opportunity/Case Access = None — Potential Field Sales Visibility Gap *(unchanged from R1)*
 
-### F-013 [NEW R2]: Custom Patient Duplicate Rule Uses BypassSharingRules
+### F-013 [NEW R1v1.1]: Custom Patient Duplicate Rule Uses BypassSharingRules
 - **Finding:** `Patient_Duplicate_Person_Account_Rule` (active) and `Patient_Duplicate_Lead_Rule` (inactive) both use `securityOption=BypassSharingRules`
 - **Evidence:** Retrieved DuplicateRule XML: `<securityOption>BypassSharingRules</securityOption>`
 - **Risk:** During dedup evaluation, users can see Patient PersonAccount records they don't have sharing access to. This is a data-visibility side channel — a user creating a lead sees "duplicate patient exists" even if they shouldn't know that patient is in the system.
 - **Recommendation:** Evaluate whether `EnforceSharingRules` is feasible. If bypass is required for accurate dedup, document and accept the risk; add to data privacy review.
 
-### F-014 [RESOLVED R2]: SharingRules Not in Source Control
+### F-014 [RESOLVED R1v1.1]: SharingRules Not in Source Control
 - **Status:** RESOLVED — SharingRules type added to `package-security.xml`; 407 SharingRules files now retrieved and committed
 
 ---
@@ -590,32 +590,32 @@ OrgSync_Integration,Integration API Only,OrgSync_User_Access,No,No,None,CRUD_via
 
 ### F-015: Admin Login As Any User Enabled *(unchanged from R1)*
 
-### F-016 [NEW R2 — CLOSED]: ScopingRule — Confirmed Absent
+### F-016 [NEW R1v1.1 — CLOSED]: ScopingRule — Confirmed Absent
 - **Finding:** ScopingRule is not in the 344-type org metadata catalog. Not supported at API v66.0 in this org configuration.
-- **Status:** CLOSED — no remediation needed. Confirmed via catalog check (R2).
+- **Status:** CLOSED — no remediation needed. Confirmed via catalog check (R1v1.1).
 
-### F-017 [NEW R2 — CLOSED]: RestrictionRule — Confirmed Absent
+### F-017 [NEW R1v1.1 — CLOSED]: RestrictionRule — Confirmed Absent
 - **Finding:** RestrictionRule retrieve returned 0 components. No restriction rules are in use.
 - **Status:** CLOSED — expected outcome for a sales/clinical org. May be worth revisiting if finer-grained record filtering is needed for regulatory compliance (e.g., restricting patient records by geographic region to licensed clinicians).
 
 ### F-018: Only 1 CSP Trusted Site Configured
 - **Finding:** Only `omnipod.com` is in the CSP whitelist. Any Lightning component trying to reach external endpoints not covered by Named Credentials will silently fail CSP enforcement.
-- **Evidence:** `force-app/main/default/cspTrustedSites/Omnipod.cspTrustedSite-meta.xml` (R2)
+- **Evidence:** `force-app/main/default/cspTrustedSites/Omnipod.cspTrustedSite-meta.xml` (R1v1.1)
 - **Recommendation:** Review and document all external endpoints reached by LWC/Aura components; add necessary entries or rely on Named Credentials.
 
 ### F-019: Geo_Test1 Territory Type Should Be Cleaned Up
 - **Finding:** A territory type named "Geo_Test1" with description "Test demo" and priority 1 remains in the active metadata.
-- **Evidence:** `Geo_Test1.territory2Type-meta.xml` (R2)
+- **Evidence:** `Geo_Test1.territory2Type-meta.xml` (R1v1.1)
 - **Recommendation:** Remove if no territories use this type in production.
 
 ### F-020: siteGuestRecordDefaultOwner is a Copado Integration User
 - **Finding:** `Trainer_Portal.site-meta.xml` shows `siteGuestRecordDefaultOwner = copadointegration@insulet.com.nextgen`. Records created by the guest user during self-registration or unauthenticated flows are owned by the Copado integration user.
-- **Evidence:** `force-app/main/default/sites/Trainer_Portal.site-meta.xml` (R2)
+- **Evidence:** `force-app/main/default/sites/Trainer_Portal.site-meta.xml` (R1v1.1)
 - **Recommendation:** Change the default owner to a dedicated service account user with minimum required permissions, not an integration tool's service account.
 
 ---
 
-## Retrieval Anomalies Encountered (R2 Gap-Fill Run)
+## Retrieval Anomalies Encountered (R1v1.1 Gap-Fill Run)
 
 | Type | Outcome | Note |
 |------|---------|------|
@@ -624,7 +624,7 @@ OrgSync_Integration,Integration API Only,OrgSync_User_Access,No,No,None,CRUD_via
 | Queue | ✅ 16 files | All queues retrieved |
 | Territory2Model | ✅ 4 models | Header XML only; individual territories are org data |
 | Territory2Type | ✅ 6 types | All types with access level and priority |
-| SharingSet | ✅ 1 file | External_Trainer_Access — critical R2 discovery |
+| SharingSet | ✅ 1 file | External_Trainer_Access — critical R1v1.1 discovery |
 | DelegateGroup | ✅ 1 file | Log_In_As — HIGH risk finding |
 | MutingPermissionSet | ✅ 0 files | Confirmed no muting PSets exist |
 | Network | ✅ 1 file | Trainer Portal full config |
@@ -640,6 +640,6 @@ OrgSync_Integration,Integration API Only,OrgSync_User_Access,No,No,None,CRUD_via
 
 ---
 
-*End of R2 Assessment — Insulet Corporation DevInt2 Sandbox | March 2026*  
-*R2 Evidence: 618 security components + 55 governance components + 4 community components retrieved*  
+*End of R1v1.1 Assessment — Insulet Corporation DevInt2 Sandbox | March 2026*  
+*R1v1.1 Evidence: 618 security components + 55 governance components + 4 community components retrieved*  
 *All 6 consistency checks: PASS | All 7 validation rules: PASS (3 non-blocking corrections applied)*
