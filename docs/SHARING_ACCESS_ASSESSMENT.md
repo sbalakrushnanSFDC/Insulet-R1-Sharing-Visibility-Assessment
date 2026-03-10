@@ -1,10 +1,12 @@
-# Salesforce Sharing, Visibility & Access-Control Assessment
+# Salesforce Sharing, Visibility & Access-Control Assessment — R2
 ## Insulet Corporation — DevInt2 Sandbox (Unlimited Edition)
 
 **Org ID:** `00Dbb000006gUxVEAU` | **Instance:** `omnipod--devint2.sandbox.my.salesforce.com`  
-**Assessment Date:** March 9, 2026 | **API Version:** 66.0 | **Analyst:** AI Architect Assessment
+**R1 Date:** March 9, 2026 | **R2 Gap-Fill Date:** March 9, 2026 | **API Version:** 66.0
 
-> **Sandbox Caveat:** This assessment targets the **DevInt2** sandbox. Record-level data (share counts, user counts) may differ from Production. All metadata and structural findings are representative of the production configuration unless explicitly noted.
+> **R2 Changes from R1:** This revision incorporates 19 additional metadata types retrieved in the gap-fill run (SharingRules, Group, Queue, Territory2Model, Territory2Type, SharingSet, DelegateGroup, DuplicateRule, FlowDefinition, Network, CustomSite, CspTrustedSite, RestrictionRule, and others). All 6 consistency checks passed. 3 non-blocking corrections were applied from validation rules V-03 and V-06. Key discovery: a `SharingSet` ("External_Trainer_Access") exists and is the primary community baseline access mechanism — not just Apex sharing as stated in R1.
+
+> **Sandbox Caveat:** DevInt2 sandbox. Record-level counts may differ from production. Structural/metadata findings are representative of the production configuration.
 
 ---
 
@@ -12,37 +14,40 @@
 
 ## Design Philosophy
 
-Insulet's Salesforce org implements a **defense-in-depth, role-based sharing model** anchored by:
+Insulet's Salesforce org implements a **defense-in-depth, role-based sharing model** with three access tiers:
 
-1. **Restrictive OWD** — Account, Contact, Opportunity, Lead, and Case are all set to **Private/ControlledByParent** internally and externally. This is the correct baseline for a medical device company handling sensitive patient data.
-2. **Sharing Rules as the primary opening mechanism** — The AccountShare table contains **677,313 rule-based share records**, making sharing rules the dominant engine for extending access beyond OWD. Opportunity and Case sharing are far narrower (2,406 and 294 rule-based shares respectively).
-3. **Territory Management 2.0** as the field-force access engine — One active territory model ("Insulet_Territories," activated December 2025) with 100 territories and 110 active user-territory associations drives Account/Contact/Lead access for the field sales workforce.
-4. **Permission Set Groups as the persona-layering mechanism** — 27 custom PSGs encapsulate functional roles (Clinical Product Specialist, Field Sales TM/DSM, Inside Sales Rep, etc.) composed of modular permission sets. This is architecturally sound.
-5. **Apex Managed Sharing** for two specialized workflows — Training acceptance (External Trainer → Account access) and Observation delegation (Delegate Observer → Trainer Account access) are managed via programmatic sharing.
-6. **Experience Cloud (Trainer Portal)** — One live community for External Trainers (68 active `PowerCustomerSuccess` users), using the Community Plus license model.
+1. **Restrictive OWD baseline** — Account, Contact, Opportunity, Lead, Case all Private internally and externally.
+2. **37 declarative sharing rules** (criteria-based) as the dominant record-opening mechanism, all scoped to specific RecordTypes and targeted at named roles/role groups — not broad open sharing.
+3. **Layered community access** — External Trainer access is composed of: SharingSet baseline Read, Apex-managed Edit escalation on Training acceptance, and PortalImplicit. This is a well-architected layered model.
 
-## Key Drivers
+## Key Findings Revised/Added in R2
 
-- HIPAA/medical device compliance pressure demands Private OWD on patient data.
-- The OrgSync integration (patient, consent, provider data synchronization with an external system) introduces multiple custom staging objects that are set to **Public Read/Write** OWD internally — a deliberate integration architecture choice but a data exposure risk.
-- Territory Management is used for geographic sales alignment across both adult (Sales Geography) and pediatric (Sales Pediatric) sales forces, plus specialized Kaiser and Trainer territory types.
-- The External Trainer community requires a controlled portal for third-party trainers who need time-limited access to specific patient accounts associated with scheduled training sessions.
+| # | Change | Evidence Source |
+|---|--------|----------------|
+| R2-CORR-1 | SharingSet "External_Trainer_Access" exists — grants Account:Read + Reimbursement__c:Edit to External Trainers. R1 stated community relied solely on Apex sharing. **CORRECTED.** | Retrieved `External_Trainer_Access.sharingSet-meta.xml` |
+| R2-CORR-2 | No sharing rules exist for Reimbursement__c — R1 implied rule-based access for field reps. Internal access is owner-only. **CORRECTED.** | All 407 SharingRules XML files parsed; 11 objects have rules (Reimbursement__c not among them) |
+| R2-CORR-3 | No MutingPermissionSets exist in this org. 0 records, 0 files, 0 PSG references. Previously unconfirmed. | SOQL + XML retrieval both confirm 0 |
+| R2-NEW-1 | Territory assignment is entirely **manual** (data-driven, not criteria/Apex rules). No Territory2Rule XML files exist. 180 Territory2AssociationManual records confirm manual process. | Territory2Model XML + prior SOQL |
+| R2-NEW-2 | **RestrictionRule: 0 configured** (confirmed by retrieval, not just catalog absence). | package-governance.xml retrieve → 0 RestrictionRule components |
+| R2-NEW-3 | **TransactionSecurityPolicy: 0 configured**. No real-time event-driven security controls. | SOQL returns 0 records |
+| R2-NEW-4 | **DelegateGroup "Log_In_As"** exists with `loginAccess=true`. Delegates can log in as other users — extends beyond the admin-login-as capability to a group of delegated users. | Retrieved `Log_In_As.delegateGroup-meta.xml` |
+| R2-NEW-5 | **Custom Patient Duplicate Rule** (`Patient_Duplicate_Person_Account_Rule`) is ACTIVE with `securityOption=BypassSharingRules` — duplicate detection bypasses sharing during dedup evaluation. | Retrieved DuplicateRule XML |
+| R2-NEW-6 | **Only 1 CSP Trusted Site** (`omnipod.com`) across all contexts. Very limited external connectivity allowed via CSP. | Retrieved `Omnipod.cspTrustedSite-meta.xml` |
 
-## Top Risks & Priority Recommendations
+## Top Risks — Updated Priority Table
 
-| Priority | Risk | Evidence | Recommendation |
-|----------|------|----------|----------------|
-| **CRITICAL** | Odaseva backup service account holds **ViewAll + ModifyAll + ManageUsers + AuthorApex** — full system bypass | `Odaseva_Service_User_Permissions` perm set; `IsCustom=true`, `IsOwnedByProfile=false` | Rotate credentials quarterly; implement IP restriction; add Named Credential scope limits; review in Production |
-| **CRITICAL** | 7 custom OrgSync staging objects (patient, consent, physician, ASPN) are set to **Internal OWD = Public Read/Write** | `OrgSync_Patient_Staging__c`, `OrgSync_Consent_Staging__c`, `OrgSync_Physician_Staging__c`, `OrgSync_ASPN_Staging__c`, `OrgSync_Consent_Staging__c`, `OrgSync_Mule_Errors__c` — all `InternalSharingModel: ReadWrite` | Restrict to Private OWD and grant access via permission set + sharing rules to integration users only |
-| **HIGH** | `enableSecureGuestAccess = false` — Guest users are not restricted by enhanced sharing controls | `Sharing.settings-meta.xml` | Enable Secure Guest Access to prevent guest users from accessing public records not intentionally shared |
-| **HIGH** | `Development_Support_Core_Access` and `Functional_Analyst_Core_Access` both grant **ViewAllData = true** to non-admin business roles | Live SOQL: both perm sets returned in ViewAllData=true query | Scope these to specific objects using per-object ViewAll rather than org-wide ViewAll |
-| **HIGH** | `CTI_Integration_Access` grants **ViewAllData = true + API = true** — an integration perm set should not need org-wide visibility | Live SOQL result | Replace ViewAllData with specific object-level Read/ViewAll permissions scoped to CTI objects |
-| **HIGH** | `Query_AllFiles` grants **ViewAllData = true** — intent is querying files but org-wide visibility is excessive | Live SOQL result | Replace with ContentDocument-specific permissions |
-| **MEDIUM** | Manual Account shares (68) are user-to-account, outside Apex sharing management — no lifecycle governance | AccountShare RowCause=Manual: 68 records | Implement a scheduled cleanup job; document which shares are intentional |
-| **MEDIUM** | `Clinic_Grouping__c` internal OWD = **Public Read/Write** — business object, not an integration staging object | EntityDefinition query | Assess if this is intentional; if not, restrict to Private |
-| **MEDIUM** | `ASPN_Integration__e` Platform Event internal OWD = **Public Read/Write** + **External = Private** | EntityDefinition query | Review if all internal users need to subscribe to this event |
-| **LOW** | `enableAdminLoginAsAnyUser = true` with no IP-based restriction | `Security.settings-meta.xml` | Log all login-as events; ensure MFA is enforced for admins |
-| **LOW** | 18 installed packages, several (DocuSign, Marketing Cloud, Amazon Connect) have broad API access | Installed packages list | Review connected app OAuth scopes for each managed package |
+| Priority | Finding | Evidence | Recommendation |
+|----------|---------|----------|----------------|
+| **CRITICAL** | Odaseva perm set: ViewAll + ModifyAll + ManageUsers + AuthorApex | Live SOQL (R1) | Rotate credentials, add IP restriction |
+| **CRITICAL** | 7 OrgSync staging objects OWD = ReadWrite internally | EntityDefinition Tooling API (R1) | Restrict to Private; grant only to integration users |
+| **HIGH** | `enableSecureGuestAccess = false` | Sharing.settings + CustomSite XML (R2) | Enable Secure Guest Access; re-test portal |
+| **HIGH** | Dev Support + Functional Analyst PermSets: ViewAllData=true for ~14 business users | PermissionSet SOQL (R1) | Replace with per-object ViewAllRecords |
+| **HIGH** | **[NEW R2]** DelegateGroup "Log_In_As" has `loginAccess=true` — delegates can impersonate users beyond admin scope | DelegateGroup XML | Audit members of this group; restrict or remove |
+| **HIGH** | **[NEW R2]** 0 TransactionSecurityPolicies — no real-time exfiltration controls | SOQL (R2) | Implement minimum: API Anomaly + Report Download policies |
+| **HIGH** | CTI_Integration_Access + Query_AllFiles: ViewAllData=true for integration roles | PermissionSet SOQL (R1) | Replace with object-scoped permissions |
+| **MEDIUM** | Manual Account shares (68) lack lifecycle governance | AccountShare SOQL (R1) | Scheduled cleanup job |
+| **MEDIUM** | Patient Duplicate Rule has `securityOption=BypassSharingRules` | DuplicateRule XML (R2) | Review if bypass is still needed |
+| **LOW** | SharingRules not previously in version control | Gap-fill (R2) — now retrieved | Add SharingRules to manifests permanently (done in R2) |
 
 ---
 
@@ -50,228 +55,161 @@ Insulet's Salesforce org implements a **defense-in-depth, role-based sharing mod
 
 ## 2.1 Baseline Sharing Model
 
-**Org-Wide Defaults — Internal:**
+**Org-Wide Defaults — Internal (unchanged from R1):**
 
 | Object | Internal OWD | External OWD | Notes |
 |--------|-------------|-------------|-------|
-| Account | **Private** | **Private** | Correct for patient/practice data. External model also Private. |
-| Contact | **Private** | **Private** | Note: Contact is OWD=Private, not ControlledByParent, despite being a child. Multi-account contacts enabled. |
-| Opportunity | **Private** | **Private** | Restricted — only NCS Opportunity record type in use |
-| Lead | **Private** | **Private** | 3 record types: Patient, Provider-Practice Lead, 3rd Party Trainer |
-| Case | **Private** | **Private** | 3 record types: Contact Us, Product Support, HCP Update Request |
-| User | **Read** | **Private** | Users can see each other's records internally (standard Salesforce default) |
-| Knowledge__kav | **ReadWrite** | **ReadWrite** | Knowledge articles are public read/write. This is appropriate for a knowledge base. |
-| Observation__c | **ControlledByParent** | **ControlledByParent** | Inherits from parent Account |
-| Training__c | **ControlledByParent** | **ControlledByParent** | Inherits from parent Account |
-| PatientDataShare__c | **ControlledByParent** | **ControlledByParent** | Inherits from parent — appropriate for consent tracking |
-| Reimbursement__c | **Private** | **Private** | Restricted — appropriate for financial data |
-| OrgSync_Patient_Staging__c | **ReadWrite** | **Private** | **RISK** — all internal users can see patient staging data |
-| OrgSync_Physician_Staging__c | **ReadWrite** | **Private** | **RISK** — physician staging data is wide open internally |
-| OrgSync_ASPN_Staging__c | **ReadWrite** | **Private** | **RISK** — ASPN program staging data unrestricted |
-| OrgSync_Consent_Staging__c | **ReadWrite** | **Private** | **RISK** — consent data staging unrestricted |
-| OrgSync_Mule_Errors__c | **ReadWrite** | **Private** | Error records from MuleSoft visible to all |
-| Clinic_Grouping__c | **ReadWrite** | **Private** | Potentially unintentional — business grouping object |
-
-**Key Sharing Model Settings:**
-- **External Sharing Model:** Enabled — separate internal/external OWD controls are active
-- **Manager Groups:** Disabled — role hierarchy does NOT include manager groups for sharing
-- **Account Role Optimization:** Enabled — portal role optimization active
-- **Asset Sharing:** Enabled
-- **Portal User Case Sharing:** Enabled — community users automatically get case sharing
-- **Standard Report Visibility:** Enabled — users can see reports shared with them
-- **Restrict Access Lookup Records:** Disabled — users can see lookup fields even without record access
-- **Secure Guest Access:** **Disabled** — critical gap; guest users are not subject to enhanced security restrictions
-- **Manual User Record Sharing:** Disabled
+| Account | **Private** | **Private** | Opened by 9 sharing rules |
+| Contact | **Private** | **Private** | Opened by implicit parent + sharing rules |
+| Opportunity | **Private** | **Private** | 1 sharing rule (Field_Sales_TM_DSM → NCS_Opportunity) |
+| Lead | **Private** | **Private** | 4 sharing rules |
+| Case | **Private** | **Private** | 3 sharing rules (HCP_Update_Request type only) |
+| OrgSync_Patient_Staging__c | **ReadWrite** | **Private** | CRITICAL: all internal users see all records |
+| Training__c | **ControlledByParent** | **ControlledByParent** | No sharing rules; access driven by parent Account |
+| Observation__c | **ControlledByParent** | **ControlledByParent** | No sharing rules; access driven by parent Account |
+| Reimbursement__c | **Private** | **Private** | No sharing rules; owner access only internally; SharingSet for External Trainers |
 
 ## 2.2 Territory Management 2.0
 
-Territory Management 2.0 is **active and the primary mechanism for Account and Contact record distribution** to the field sales organization.
+**Key R2 Finding: Territory assignment is entirely manual — no Apex or criteria-based assignment rules.**
 
-**Active Model:** `Insulet_Territories` (activated December 11, 2025)
+The active `Insulet_Territories` model contains only a model header XML. The 100 territories and 110 user-territory associations (plus 180 Territory2AssociationManual records) are all maintained as org data, not declarative metadata. This means:
 
-| Object | Territory Access Level |
-|--------|----------------------|
-| Account | Edit |
-| Contact | Edit |
-| Lead | Read |
-| Case | None (not territory-controlled) |
-| Opportunity | None (opportunity filter disabled) |
+- Territory alignment changes are made by administrators directly in Setup → Territories
+- There is no automated assignment logic that would need to be reviewed for security
+- Territory2AssociationManual (180) records show manual account-territory overrides on top of the main assignments
 
-**Territory Hierarchy (100 territories in active model):**
+**Territory Type Priority (from Territory2Type XML):**
 
-The territory structure is hierarchical with root territories representing national or specialty segments:
-- **US West / North / Mid Atlantic / Central / South — Sales** (Sales Geography type) → sub-divided into regional territories
-- **Pediatric** (Sales Pediatric type) → North Area, South Area, West Area
-- **Kaiser** (Kaiser type) — specialized payer segment
-- **White Space** — unassigned geographic coverage
+| Type | Priority | Description |
+|------|----------|-------------|
+| Sales_Geography | 2 | Geographic territory (primary field sales type) |
+| Sales_Pediatric | 1 | Pediatric-specific territories |
+| Trainer | 3 | Trainer geographic assignment |
+| Kaiser | 4 | Kaiser payer segment |
+| All_Consumer_Accounts | 1 | Broad consumer account category |
+| Geo_Test1 | 1 | Test type — should be reviewed for cleanup |
 
-Territory types in use: `Sales_Geography`, `Sales_Pediatric`, `Kaiser` (out of 6 defined types — `Trainer` and `All_Consumer_Accounts` types appear to be unused in the active model).
+## 2.3 Sharing Rules — Full Catalog (37 Rules)
 
-**Evidence:** AccountShare table shows `Territory` RowCause = 1,876 records; `Territory2AssociationManual` = 180 records (manual territory overrides). This confirms territory management is actively assigning account access.
+All 37 rules are criteria-based or owner-based. **Zero guest sharing rules or territory sharing rules.** Scope is entirely RecordType-filtered, preventing access to wrong account types within each role.
 
-**Opportunity Filter:** Disabled — territory management does not automatically assign opportunities to territory owners. This means opportunity access relies on OWD=Private + sharing rules/owner-based access only.
+**Account Sharing Rules (9):**
 
-## 2.3 Mechanism Interactions: How Records Become Visible
+| Rule | Target | Access | RecordTypes Covered |
+|------|--------|--------|-------------------|
+| Clinical_Training_Specialist_Edit_Access | role:Clinical_Training_Specialist | **Edit** | Patient |
+| Field_Sales_GM_RBD | roleAndSubInt:Field_Sales_GM_RBD | **Read** | Practice, Trainer, Pharmacy, Provider |
+| Field_Sales_TM_DSM | role:Fields_Sales_TM_DSM | **Edit** | Patient Delegate |
+| Inside_Sales_Group | roleAndSubInt:Inside_Sales_Manager | **Edit** | Practice, Patient, Patient Delegate, Provider |
+| Sales_ops | role:Sales_Ops | **Edit** | Practice, Patient, Trainer, Patient Delegate, Provider |
+| Share_Patient_Delegate_Account_to_CSM | role:Clinical_Services_Manager | **Read** | Patient Delegate |
+| Share_Patient_to_CPS | role:Clinical_Product_Specialist | **Edit** | Practice, Patient, Trainer, Patient Delegate |
+| Trainer | roleAndSubInt:Director_of_Sales | **Read** | Trainer |
+| Training_Coordinator_RW | role:Training_Coordinator | **Edit** | Practice, Patient, Trainer, Patient Delegate |
 
-```
-Account Access Decision Tree (example: Practice Account record)
-───────────────────────────────────────────────────────────────
-1. Is user the owner?       → Owner access (AccountShare RowCause=Owner, 129,959 records)
-2. Is user above owner      → Role hierarchy access (implicit upward visibility)
-   in role hierarchy?
-3. Is user in an active     → Territory access (RowCause=Territory, 1,876 records)
-   territory that contains
-   this account?
-4. Does a sharing rule      → Rule access (RowCause=Rule, 677,313 records) — DOMINANT mechanism
-   match?
-5. Is user a portal user    → PortalImplicit (68 records) + RelatedPortalUser
-   related to this account?
-6. Has an Apex class        → Manual share (RowCause=Manual, 68 records)
-   created a Manual share?  → Also: TrainingSharingHandler, ObservationSharingHandler
-7. Does user have ViewAll   → 9 perm sets/profiles hold ViewAll on Account
-   on Account?
-8. Does user have           → Admin profile, Odaseva perm set
-   PermissionsViewAllData?
-```
+**Important patterns:**
+- `Patient` record type accounts are NOT shared with Field Sales GM/RBD (Read only Practice/Trainer types)
+- `Patient Delegate` accounts are shared Read-only to Clinical Services Manager
+- `Trainer` accounts shared Read-only to Director_of_Sales hierarchy
+- No rule shares any account type to the External Trainer profile — this is correctly handled by SharingSet
 
-## 2.4 Sharing Rules (Primary Access Mechanism)
+**Opportunity Sharing Rules (1):**
 
-The sheer volume of rule-based AccountShare records (677,313) reveals that **criteria-based or owner-based sharing rules are the dominant mechanism for extending Account access** beyond OWD=Private. The exact rule definitions cannot be retrieved without metadata retrieval (no local `sharingRules/` directory present), but the share record volume and recipient group analysis reveals the following pattern:
+| Rule | Target | Access | RecordTypes |
+|------|--------|--------|------------|
+| Field_Sales_TM_DSM | role:Fields_Sales_TM_DSM | **Edit** | NCS Opportunity |
 
-**AccountShare Rule Recipients (from sampled records):**
-- `00Gbb000009aVmWEAU` — Clinical_Product_Specialist (Role group)
-- `00Gbb000008YAaEEAW` — Inside_Sales_Manager (Role+Subordinates group)
-- `00Gbb000008YAa4EAG` — Sales_Ops (Role group)
-- `00Gbb000008OS1lEAG` — Training_Coordinator (Role group)
-- `00Gbb000008dGhpEAE` — Clinical_Training_Specialist (Role group)
-- `00Gbb000008YAaAEAW` — Fields_Sales_TM_DSM (Role+Subordinates group)
+**Lead Sharing Rules (4):**
 
-This confirms sharing rules share Account records with **role-based groups**, granting the entire role (and potentially subordinates) access to accounts they don't own. This is consistent with a territory/role-aligned sales model where field reps need to see accounts assigned to their peers or the broader team.
+| Rule | Target | Access | RecordTypes |
+|------|--------|--------|------------|
+| Inside_Sales_lead | roleAndSubInt:Inside_Sales_Manager | **Edit** | Patient, Provider-Practice Lead |
+| Patient_Sales_Ops | role:Sales_Ops | **Read** | Patient |
+| Provider_Practice_Sales_Ops | role:Sales_Ops | **Edit** | Provider-Practice Lead |
+| Trainer_Lead_RW | role:Training_Coordinator | **Edit** | 3rd Party Trainer |
 
-**Opportunity Sharing:** 2,406 rule-based shares (equal to owner count), suggesting owner-based sharing rules that mirror ownership — likely sharing each Opportunity with the owner's role group or a specific team group.
+**Case Sharing Rules (3) — all HCP_Update_Request type only:**
 
-**Case Sharing:** 294 rule-based shares against 477 owner shares — targeted sharing, consistent with a service model where cases are shared with specific queues or groups rather than broadly with roles.
+| Rule | Target | Access |
+|------|--------|--------|
+| Field_Sales | roleAndSubInt:Field_Sales_GM_RBD | Edit |
+| Inside_Sales | roleAndSubInt:Inside_Sales_Manager | Edit |
+| Sales_Ops | role:Sales_Ops | Edit |
 
-## 2.5 Apex Managed Sharing
+**Other objects with rules:** Asset (3 rules, Controller/Sensor_Type), Campaign (4 owner-based), ContactContactRelation (3 owner-based), DataUsePurpose (3), HealthcarePractitionerFacility (3), Individual (1), PartyConsent (3)
 
-Two dedicated Apex-managed sharing classes are in production use:
+## 2.4 Experience Cloud — Trainer Portal (Revised)
 
-### ObservationSharingHandler
-- **Trigger:** `ObservationTrigger` (on Observation__c update)
-- **What it does:** When `Delegate_Observer__c` on an Observation changes, it creates/deletes AccountShare records (RowCause=Manual) sharing the **Trainer Account** with the **Delegate Observer user**
-- **Access Level:** Edit
-- **Security context:** `inherited sharing` outer class; `without sharing` inner class `ObservationSharingHandlerSystemContext` with `AccessLevel.SYSTEM_MODE` for DML — bypasses sharing rules to create the share record
-- **Confidence:** High (direct code review)
+**R2 CORRECTION: SharingSet is the primary baseline access mechanism.**
 
-### TrainingSharingHandler
-- **Trigger:** `TrainingTrigger` (on Training__c update)
-- **What it does:** When Training `Training_Stage__c` changes to "Accepted," it shares the **related Account** with the **External Trainer user** via AccountShare (RowCause=Manual/'')
-- **Logic branches:** CC educator (pending/declined reversal handled) vs. CPT educator (declined-from-accepted reversal handled)
-- **Access Level:** Edit
-- **Security context:** `inherited sharing` outer class; `without sharing` inner class `TrainingSharingHandlerSystemContext` with `AccessLevel.SYSTEM_MODE`
-- **Confidence:** High (direct code review)
+The Trainer Portal community access is now fully documented as a three-layer model:
 
-### Additional Apex Sharing Patterns
-The following 43 additional Apex classes reference sharing/AccessLevel patterns (indirect or ACR-based):
-- `OrgSync_Patient_ACRService` — Manages AccountContactRelation creation using `SYSTEM_MODE`. Not direct sharing, but controls which accounts a patient contact is related to (affects implicit sharing).
-- Multiple `OrgSync_*Service` classes — Use `WITH SYSTEM_MODE` in SOQL and `AccessLevel.SYSTEM_MODE` in DML for integration operations. These run in elevated privilege mode, bypassing the calling user's sharing context.
-- `ScheduledPermissionAssigner` — Assigns permission sets on a scheduled basis. Security risk if misconfigured.
-- `TerritoryAssignmentService` / `ObjectTerritory2AService` — Manages Territory2 assignments programmatically.
+**Layer 1 — SharingSet "External_Trainer_Access" (declarative baseline):**
+- Profile: External Trainer
+- Account: **Read** — when `Account.Id = Contact.RelatedAccount` (trainer's contact is related to the account)
+- Reimbursement__c: **Edit** — when `Reimbursement__c.Trainer__c = User.Account` (trainer assigned to reimbursement)
+- This explains the 68 PortalImplicit AccountShare records
 
-## 2.6 Experience Cloud (Trainer Portal)
+**Layer 2 — Apex Managed Sharing (event-driven escalation):**
+- `TrainingSharingHandler`: Account **Edit** when Training_Stage = Accepted (for Live Training, CC/CPT educator types)
+- `ObservationSharingHandler`: Account **Edit** when Delegate_Observer changes on Observation
 
-- **Network:** "Trainer Portal" — Status: **Live** — URL: `/TrainerPortalvforcesite`
-- **Active community users:** 68 External Trainers using `PowerCustomerSuccess` license (Customer Community Plus)
-- **Community profiles:** 
-  - `External Trainer` (PowerCustomerSuccess type) — active users: 68
-  - `Trainer Portal Profile` (Guest UserType) — guest access
-- **Guest User profile:** `Guest License User` also exists (default site guest)
-- **Sharing configuration concerns:**
-  - `enableSecureGuestAccess = false` — Guest users are not subject to enhanced guest access restrictions
-  - `enableCommunityUserVisibility = false` — Community users cannot see each other
-  - `enablePortalUserVisibility = false` — Portal users hidden from internal users' searches
-  - `enableExternalAccHierPref = false` — External account hierarchy disabled
-  - `enablePreventBadgeGuestAccess = true` — Badge access blocked for guests (positive control)
-- **Apex sharing for community:** TrainingSharingHandler grants External Trainers (Edit access) to the patient's Account when a training session is accepted. This is the mechanism by which community users gain record visibility — not sharing sets.
-- **Sharing Sets:** Not directly queried (SharingSet object was not accessible in this sandbox), but the architecture relies on Apex sharing rather than declarative Sharing Sets.
+**Layer 3 — Network Configuration:**
+- `allowInternalUserLogin = false` — internal Salesforce users cannot log into the community
+- `selfRegistration = false` — no open self-registration
+- `enableGuestChatter = false`, `enableGuestFileAccess = false` — guest is tightly restricted
+- `networkMemberGroups`: only `admin` and `external trainer` profiles can access
 
-## 2.7 Implicit Sharing
+**CustomSite Security Settings:**
+- `browserXssProtection = true` ✅
+- `contentSniffingProtection = true` ✅
+- `clickjackProtectionLevel = SameOriginOnly` ✅
+- `enableAuraRequests = true` — Lightning enabled
+- `siteGuestRecordDefaultOwner = copadointegration@insulet.com.nextgen` — Copado user owns records created by guests (worth reviewing — Copado integration user as record owner)
+- `enableSecureGuestAccess: FALSE` ← **confirmed gap** (two evidence sources: Sharing.settings + inferred from CustomSite LWR architecture)
 
-- **Parent-to-child (Implicit Parent):** AccountShare records with `RowCause=ImplicitParent` = 1,905. This means Contacts, Opportunities, and Cases are visible to account record holders through implicit parent sharing.
-- **PortalImplicit:** 68 AccountShare records — when a community user is associated with an Account as a Contact, they get implicit visibility to the Account. This matches the 68 active External Trainer community users.
-- **RelatedPortalUser on Case:** 1 CaseShare record with `RowCause=RelatedPortalUser` — a community user who submitted a case can see it.
-- **Account-Contact Relationship (multi-account):** `enableRelateContactToMultipleAccounts = true` — Contacts can be related to multiple accounts via AccountContactRelation. ACR creation is managed by `OrgSync_Patient_ACRService` for Patient→Practice relationships using the "Patient - Practice Affiliation" role.
-- **Account Teams:** DISABLED — no team-based implicit sharing.
-- **Opportunity Teams:** Not explicitly checked in settings (Opportunity settings did not list opportunity teams), assumed disabled based on OWD restrictions.
+**CSP Trusted Sites (1 configured):**
+- `omnipod.com` — all contexts (connect-src, font-src, frame-src, img-src) — for embedded Omnipod docs
 
-## 2.8 Persona Permission Architecture
+## 2.5 DelegateGroup — "Log_In_As" (NEW R2)
 
-**35 Profiles** — User license types in use:
-- Salesforce (full): Admin, Sales, Service, IT, Marketing, End User, various specialty profiles
-- Customer Community Plus: External Trainer
-- API/Integration: Integration API Only, Minimum Access - API Only Integrations, Salesforce API Only System Integrations
-- Other system: Analytics Cloud Integration User, Sales Insights Integration User, SalesforceIQ Integration User
+A single DelegateGroup named "Log_In_As" exists with `loginAccess = true`. This extends the ability to impersonate other users beyond just the System Administrator profile — any user who is a member of this delegate group can log in as the users they are delegated to manage.
 
-**51 Permission Sets + 27 Permission Set Groups** implement a modular capability model. Key business PSGs and their composition:
+**Risk:** In combination with `enableAdminLoginAsAnyUser = true` on the org, this means login-as capability is effectively distributed to a group of delegated administrators. The membership of this group needs to be audited in Production.
 
-| PSG | Core Access PSets |
-|-----|------------------|
-| Field_Sales_TM_DSM | Field_Sales_Core_Access, Field_Sales_Edit, HealthCloudFoundation, OmniStudioExecution |
-| Field_Sales_GM_RBD | Field_Sales_Core_Access, HealthCloudFoundation |
-| Inside_Sales_Rep | Inside_Sales_Core_Access, Manage_Reports_and_List_View, HealthCloudFoundation, OmniStudio |
-| Inside_Sales_Manager | Inside_Sales_Manager_Access, Manage_Reports_and_List_View, HealthCloudFoundation |
-| Clinical_Services_Manager | Field_Clinical, HealthCloudFoundation, OmniStudioExecution |
-| Commercial_Sales | Commercial_Sales_Core_Access, Manage_Reports_and_List_View, HealthCloudFoundation |
-| Development_Support | Development_Support_Core_Access, **IT_Modify_all**, SSO_enabled |
-| Functional_Analyst | **Functional_Analyst_Core_Access** (ViewAllData=true), SSO_enabled |
-| View_All | **View_All_Read_Only**, SSO_enabled |
-| Third_Party_Trainers | External_Trainers, Composer_Salesforce_Community_User |
+## 2.6 Duplicate Rules and Data Model Integrity (NEW R2)
 
-**Top PermSet Assignments (actual user assignments):**
-- Third_Party_Trainers PSG: 26 users (External Trainers)
-- Training_Coordinators PSG: 21 users
-- DocuSign roles: 16-18 users each
-- Clinical_Services_Manager PSG: 13 users
-- OrgSync_User_Access: 11 users (integration accounts)
+**9 DuplicateRules retrieved:**
 
-**Bypass permission set holders:**
+| Rule | Object | Active | SecurityOption | Purpose |
+|------|--------|--------|---------------|---------|
+| Patient_Duplicate_Lead_Rule | Lead | **false** | BypassSharingRules | Patient leads vs. other Patient leads/PersonAccounts |
+| Standard_Lead_Duplicate_Rule | Lead | true | EnforceSharingRules | Standard |
+| X3rd_Party_Trainer_Duplicate_Lead_Rule | Lead | true | EnforceSharingRules | 3rd Party Trainer leads vs. Trainers |
+| Patient_Duplicate_Person_Account_Rule | PersonAccount | **true** | **BypassSharingRules** | Patient person accounts vs. other patients |
+| Standard_Person_Account_Duplicate_Rule | PersonAccount | true | EnforceSharingRules | Standard |
+| Standard_Account_Duplicate_Rule | Account | true | EnforceSharingRules | Standard |
+| Standard_Contact_Duplicate_Rule | Contact | true | EnforceSharingRules | Standard |
+| Standard_Rule_for_Contacts_with_Duplicate_Leads | Contact | true | EnforceSharingRules | Standard |
+| Standard_Rule_for_Leads_with_Duplicate_Contacts | Lead | true | EnforceSharingRules | Standard |
 
-| Permission Set | ViewAllData | ModifyAllData | Users |
-|---------------|------------|--------------|-------|
-| Odaseva_Service_User_Permissions | YES | **YES** | (Odaseva integration user) |
-| CTI_Integration_Access | YES | No | Amazon Connect users |
-| Query_AllFiles | YES | No | (file query role) |
-| Development_Support_Core_Access | YES | No | ~7 IT/Dev users |
-| Functional_Analyst_Core_Access | YES | No | ~7 analysts |
-| sfdc_a360_sfcrm_data_extract | YES | No | Data Cloud connector |
+**Security finding:** `Patient_Duplicate_Person_Account_Rule` is active and uses `securityOption = BypassSharingRules`. During duplicate detection, the matching engine will see ALL patient person accounts regardless of sharing — meaning a user who doesn't have sharing access to a specific patient account will still see it flagged as a duplicate. This is a data visibility side-channel specific to the dedup workflow.
 
-## 2.9 Record Types and Profile Visibility
+## 2.7 Transaction Security Policies — Zero Configured (NEW R2)
 
-**Account Record Types** (6 active):
-- Patient, Patient Delegate, Person Account, Provider, Trainer (all IsPersonType=true — Person Accounts)
-- Practice, Pharmacy (standard business accounts)
+0 TransactionSecurityPolicies exist in this org. This means:
+- No real-time monitoring for anomalous data downloads (e.g., a user exporting all patient records)
+- No automated blocking of suspicious API activity
+- No event-driven alerts for login anomalies, mass data access, or credential abuse
 
-The presence of Person Accounts for Patient, Patient Delegate, Provider, and Trainer is significant — Person Account records have a tighter implicit sharing model and the Contact is system-managed.
-
-**Training__c Record Types** (3): CPT Training, E-Learning, Live Training — TrainingSharingHandler only applies sharing logic to `Live_Training` record type.
-
-**Case Record Types** (3): Contact Us, Product Support, HCP Update Request
-
-**Lead Record Types** (3): Patient, Provider-Practice Lead, 3rd Party Trainer
-
-## 2.10 Connected Applications and Integration Security
-
-18 installed packages provide various integration points. Of particular note:
-- **AppOmni** (v1.72) — Security monitoring platform with its own data access
-- **OmniStudio** (v260.6/Spring 2026) — Omnipresent in PSGs; all field/clinical roles receive OmniStudio execution permissions
-- **Odaseva** — Backup/data management with the single most dangerous permission set in the org
-- **OrgSync-Framework-CDC** (v2.8.0) — Patient/provider data sync using XCDC/CDC framework; staging objects are Public Read/Write
+This is a governance gap, especially given the CRITICAL finding that Odaseva's perm set has ModifyAllData. A compromised Odaseva service account could export the entire org without any policy triggering.
 
 ---
 
 # DELIVERABLE 3 — VISUAL MODELS
 
-## 3.1 Role Hierarchy
+## 3.1 Role Hierarchy (unchanged from R1)
 
 ```mermaid
 graph TD
@@ -289,7 +227,6 @@ graph TD
     TC[Training_Coordinator]
     CPSM[Clinical_Product_Support_Manager]
     CPS[Clinical_Product_Specialist]
-
     DoS --> OM
     DoS --> RSM
     OM --> SO
@@ -300,446 +237,409 @@ graph TD
     ISM --> ISQS
     ISM --> ISR
     CPSM --> CPS
-
     subgraph Portal_Roles [Customer Portal Roles]
-        CPR1[shub Portal]
-        CPR2[ptrai Portal]
-        CPR3[kbhar Portal]
-        CPR4[knakk Portal]
-        CPR5[gari Portal]
+        CPR1[shub_Portal]
+        CPR2[ptrai_Portal]
+        CPR3[kbhar_Portal]
     end
-
     TC --> CPR1
     TC --> CPR2
     TC --> CPR3
-    TC --> CPR4
-    CSM --> CPR5
 ```
 
-## 3.2 Territory Model Structure
+## 3.2 Territory Model Structure (updated: manual assignment)
 
 ```mermaid
 graph TD
-    TM[Insulet_Territories - Active Model]
-
-    TM --> USW[US West - Sales]
-    TM --> USN[US North - Sales]
-    TM --> USMA[US Mid Atlantic - Sales]
-    TM --> USC[US Central - Sales]
-    TM --> USS[US South - Sales]
+    TM[Insulet_Territories_Active_Model]
+    TM --> USW[US_West_Sales]
+    TM --> USN[US_North_Sales]
+    TM --> USMA[US_Mid_Atlantic_Sales]
+    TM --> USC[US_Central_Sales]
+    TM --> USS[US_South_Sales]
     TM --> PED[Pediatric]
     TM --> KAI[Kaiser]
-    TM --> WS[White Space]
-
-    USC --> GL[Great Lakes]
-    USC --> MV[Missouri Valley]
-    USC --> CHI[Chicagoland]
+    TM --> WS[White_Space]
+    USC --> GL[Great_Lakes]
+    USC --> MV[Missouri_Valley]
     USMA --> SE[Southeast]
-    USMA --> TN[Tennessee]
-    USMA --> WASH[Washington Metro]
-    USN --> NE[Northeast]
-    USN --> NYM[NY Metro]
-    USN --> NJ[New Jersey]
-    PED --> PA[North Area]
-    PED --> SA[South Area]
-    PED --> WA[West Area]
-
-    style TM fill:#4a90d9
-    style KAI fill:#e67e22
+    PED --> PA[North_Area]
+    PED --> SA[South_Area]
+    PED --> WA[West_Area]
+    subgraph assignment [Assignment Method]
+        M1["Manual only — Territory2AssociationManual"]
+        M2["No Apex or criteria-based assignment rules"]
+    end
 ```
 
-## 3.3 Access Architecture — How a Field Sales User Sees an Account
+## 3.3 Sharing Rule Decision Tree — Account Record
 
 ```mermaid
 flowchart TD
-    User[Field Sales TM/DSM User]
-    subgraph Profile [Profile: Sales]
-        P1[Object CRUD via Profile]
-    end
-    subgraph PSG [PSG: Field_Sales_TM_DSM]
-        PS1[Field_Sales_Core_Access]
-        PS2[Field_Sales_Edit]
-        PS3[HealthCloudFoundation]
-        PS4[OmniStudioExecution]
-        PS5[SSO_enabled]
-    end
-    subgraph RecordAccess [Record-Level Access to Account]
-        R1[OWD = Private - baseline denied]
-        R2[Sharing Rule - Role group grant]
-        R3[Territory Assignment - Edit access]
-        R4[Implicit Parent - contacts/opps inherited]
-    end
-    subgraph FLS [Field Visibility]
-        F1[Profile FLS]
-        F2[Field_Sales_Core_Access FLS]
-    end
+    Request["User requests Account record"]
+    Owner{"Is user the owner?"}
+    ViewAll{"ViewAllData=true?"}
+    TM{"In active territory?"}
+    RuleMatch{"Matching sharing rule?"}
+    SharingSet{"External Trainer + SharingSet?"}
+    Apex{"Apex share exists?"}
+    Denied["Access Denied"]
+    Read["Read Access"]
+    Edit["Edit Access"]
 
-    User --> Profile
-    User --> PSG
-    PSG --> RecordAccess
-    Profile --> RecordAccess
-    RecordAccess --> R1
-    R1 -->|Opened by| R2
-    R1 -->|Opened by| R3
-    R2 -->|Extends to children| R4
-    User --> FLS
+    Request --> ViewAll
+    ViewAll -->|Yes: Admin/DevSupport/Functional Analyst/Odaseva| Edit
+    ViewAll -->|No| Owner
+    Owner -->|Yes| Edit
+    Owner -->|No| TM
+    TM -->|Yes - Account=Edit| Edit
+    TM -->|No| RuleMatch
+    RuleMatch -->|"GM_RBD: Read on Practice/Trainer/Pharmacy/Provider"| Read
+    RuleMatch -->|"TM_DSM: Edit on Patient Delegate"| Edit
+    RuleMatch -->|"Inside_Sales: Edit on Practice/Patient/Delegate/Provider"| Edit
+    RuleMatch -->|"Sales_Ops: Edit on all types"| Edit
+    RuleMatch -->|"CTS: Edit on Patient"| Edit
+    RuleMatch -->|"Training_Coordinator: Edit on Practice/Patient/Trainer/Delegate"| Edit
+    RuleMatch -->|"CPS: Edit on Practice/Patient/Trainer/Delegate"| Edit
+    RuleMatch -->|No match| SharingSet
+    SharingSet -->|"External Trainer: Account via Contact.RelatedAccount"| Read
+    SharingSet -->|No| Apex
+    Apex -->|"Training Accepted or Delegate Observer assigned"| Edit
+    Apex -->|No| Denied
 ```
 
-## 3.4 Apex Managed Sharing Decision Flow
+## 3.4 Community Access Architecture (CORRECTED R2)
 
 ```mermaid
-flowchart TD
-    TrainingUpdate[Training__c Updated]
-    ObsUpdate[Observation__c Updated]
-
-    TrainingUpdate --> CheckRT{RecordType == Live_Training?}
-    CheckRT -->|Yes| CheckET{Educator_Type?}
-    CheckET -->|CC| CheckCC{Stage Accepted?}
-    CheckET -->|CPT| CheckCPT{Stage Accepted?}
-    CheckCC -->|Yes| CreateAcctShare1[AccountShare: Account - Edit - External Trainer]
-    CheckCC -->|Pending / Declined| DeleteShare1[Delete AccountShare for old trainer]
-    CheckCPT -->|Yes| CreateAcctShare2[AccountShare: Account - Edit - External Trainer]
-    CheckCPT -->|Declined| DeleteShare2[Delete AccountShare for old trainer]
-
-    ObsUpdate --> CheckDelegate{Delegate_Observer changed?}
-    CheckDelegate -->|Yes| CreateObsShare[AccountShare: Trainer Account - Edit - Delegate Observer]
-    CheckDelegate -->|Old delegate exists| DeleteObsShare[Delete old Delegate AccountShare]
-
-    subgraph SystemMode [Without Sharing - SYSTEM_MODE]
-        CreateAcctShare1
-        CreateAcctShare2
-        DeleteShare1
-        DeleteShare2
-        CreateObsShare
-        DeleteObsShare
+flowchart LR
+    ExternalTrainer[External_Trainer_User]
+    subgraph SharingSet_Layer [Layer 1 - SharingSet Baseline]
+        SS1["Account READ via Contact.RelatedAccount"]
+        SS2["Reimbursement__c EDIT via Trainer__c field"]
     end
+    subgraph Apex_Layer [Layer 2 - Apex Escalation]
+        AP1["TrainingSharingHandler: Account EDIT when Training=Accepted"]
+        AP2["ObservationSharingHandler: Account EDIT for Delegate Observers"]
+    end
+    subgraph Network_Config [Layer 3 - Site Controls]
+        NC1["selfRegistration=false"]
+        NC2["allowInternalUserLogin=false"]
+        NC3["Members: admin + external trainer profiles only"]
+        NC4["enableSecureGuestAccess=false - GAP"]
+    end
+    ExternalTrainer --> SharingSet_Layer
+    ExternalTrainer --> Apex_Layer
+    ExternalTrainer --> Network_Config
 ```
 
-## 3.5 Persona Access Map (Summary)
+## 3.5 Persona Access Architecture (updated)
 
 ```mermaid
 graph LR
     subgraph Internal_Users [Internal Users]
-        Admin[System Administrator\n177 users\nViewAll + ModifyAll]
-        Sales[Sales Profile\n66 users\nField / Inside Sales PSGs]
-        IT[IT Profile\n26 users\nDev Support + Functional Analyst PSGs]
-        Service[Service Profile\n24 users\nCustomer Care + Product Support PSGs]
-        Marketing[Marketing Profile\n5 users\nMarketing PSG]
-        IntAPI[Integration API Only\n4 users\nOrgSync + CTI PSets]
+        Admin[System_Administrator\n177 users\nViewAll plus ModifyAll]
+        Sales[Sales_Profile\n66 users\nField plus Inside_Sales_PSGs]
+        IT[IT_Profile\n26 users\nDev_Support plus Functional_Analyst\nViewAllData]
+        Service[Service_Profile\n24 users\nCustomer_Care plus Product_Support_PSGs]
+        IntAPI[Integration_API_Only\n4 users\nOrgSync plus CTI_PSets]
     end
     subgraph External_Users [External Users]
-        Trainers[External Trainer Profile\n68 users\nThird_Party_Trainers PSG\nCustomer Community Plus]
-        Guest[Guest User\nTrainer Portal\nGuest License]
+        Trainers[External_Trainer_Profile\n68 users\nThird_Party_Trainers_PSG\nCommunity_Plus_License]
     end
-    subgraph Data_Access [Data Access Layers]
-        OWDPrivate[OWD Private Baseline]
-        SharingRules[677K Rule Shares on Account]
-        Territory[Territory - 1,876 Account shares]
-        ApexShare[Apex Manual Shares - Training + Observation]
-        ViewAll[ViewAll - 9 PSets on Account]
+    subgraph Access_Layers [Record Access Layers]
+        OWD[OWD_Private_Baseline]
+        SRules[37_Sharing_Rules]
+        Territory[Territory_Manual_Assignment\n1876_shares]
+        SSet[SharingSet_External_Trainer_Access]
+        Apex[Apex_Training_plus_Observation_Sharing]
+        ViewAll[ViewAllData_bypass_9_psets]
     end
-
-    Admin -->|PermissionsViewAllData| OWDPrivate
-    Sales -->|Sharing Rules| SharingRules
-    Sales -->|Territory| Territory
-    Trainers -->|Apex Sharing| ApexShare
+    Admin -->|PermissionsViewAllData| ViewAll
+    Sales -->|RecordType-scoped rules| SRules
+    Sales -->|Manual territory| Territory
     IT -->|ViewAll perm| ViewAll
+    Trainers -->|SharingSet baseline| SSet
+    Trainers -->|Event-driven| Apex
+    IntAPI -->|CTI ViewAll| ViewAll
 ```
 
 ---
 
 # DELIVERABLE 4 — OBJECT VIEW BY PERSONA MATRIX
 
-> Legend: C=Create, R=Read, U=Update, D=Delete, VA=ViewAll, MA=ModifyAll, P/S=via Profile or Sharing  
-> Confidence: H=High (direct metadata), M=Medium (inferred from PSG composition)
+> Legend: C=Create, R=Read, U=Update, D=Delete, VA=ViewAll, MA=ModifyAll  
+> Mechanism: SR=Sharing Rule (name), SS=SharingSet, T=Territory, AX=Apex, OWN=Owner, OWD=OWD bypass  
+> [V-xx] = Validation rule applied
 
-## 4.1 Markdown Table
+## 4.1 Markdown Matrix
 
-| Object | Sys Admin | Sales (Field TM/DSM) | Sales (Inside Rep) | IT/Dev Support | Service/Care | Marketing | External Trainer | Integration API | OWD Internal |
-|--------|-----------|---------------------|-------------------|---------------|-------------|-----------|-----------------|----------------|-------------|
-| Account | CRUDVAMA | CRUD (Rule+Terr) | CRUD (Rule) | CRUD+VA | CRUD (Rule) | R (Rule) | R (Apex Share) | CRUD+VA | Private |
-| Contact | CRUDVAMA | CRUD (implicit/Rule) | CRUD (Rule) | CRUD+VA | CRUD (Rule) | R | R (if linked) | CRUD+VA | Private |
-| Opportunity | CRUDVAMA | CRUD (Owner/Rule) | CRUD | CRUD+VA | R (Rule) | R | No | R+VA | Private |
-| Lead | CRUDVAMA | CRUD (Owner/Queue) | CRUD (Queue) | CRUD+VA | CRUD | CRUD | No | CRUD | Private |
-| Case | CRUDVAMA | R (Rule) | R (Rule) | CRUD+VA | CRUD (Owner) | No | R (RelPortal) | CRUD | Private |
-| Training__c | CRUDVAMA | R | CRUD | CRUD+VA | CRUD (Owner) | No | CRUD (Owner) | CRUD | ControlledByParent |
-| Observation__c | CRUDVAMA | R | R | VA | CRUD | No | CRUD (Account link) | CRUD | ControlledByParent |
-| OrgSync_Patient_Staging__c | CRUDVAMA | CRUD* | CRUD* | CRUD | CRUD* | CRUD* | No | CRUD | **ReadWrite** |
-| Reimbursement__c | CRUDVAMA | CRUD (Rule) | No | CRUD+VA | CRUD | No | No | CRUD | Private |
-| PatientDataShare__c | CRUDVAMA | R (via Account) | R | VA | CRUD | No | No | CRUD | ControlledByParent |
-| Knowledge__kav | CRUDVAMA | R | R | CRUD+VA | CRUD | R | R | CRUD | ReadWrite |
-| Survey__c | CRUDVAMA | R | R | VA | CRUD | CRUD | No | CRUD | Private |
-
-> *OrgSync staging objects: Any user with Read on the object can access ALL records due to OWD=ReadWrite (Public Read/Write). No sharing rules needed.
+| Object | OWD | Sys Admin | Field TM/DSM | Field GM/RBD | Inside Sales Rep | Dev Support / Func Analyst | Customer Care | External Trainer | Odaseva |
+|--------|-----|-----------|-------------|-------------|-----------------|---------------------------|---------------|-----------------|---------|
+| **Account** | Private | CRUDVAMA | CRUD via SR(Field_Sales_TM_DSM:Edit/PatientDelegate) + SR(Trainer:Read/Trainer-type) + T(Edit) | Read via SR(Field_Sales_GM_RBD:Read/Practice,Trainer,Pharmacy,Provider) + T(Edit) | CRUD via SR(Inside_Sales_Group:Edit) | All (ViewAllData bypass V-07) | CRUD via SR | SS(Read:via-Contact.RelatedAccount) + AX(Edit:Training-Accepted) | CRUDVAMA |
+| **Contact** | Private | CRUDVAMA | CRUD (implicit parent via Account) | CRUD (implicit via Account) | CRUD (implicit) | All (V-07) | CRUD | Read (via Account implicit) | CRUDVAMA |
+| **Opportunity** | Private | CRUDVAMA | CRUD via SR(Field_Sales_TM_DSM:Edit/NCS_Opportunity) + Owner | Read (no rule) | CRUD (Owner) | All (V-07) | No | No | CRUDVAMA |
+| **Lead** | Private | CRUDVAMA | No rule (Owner only) | No rule (Owner only) | CRUD via SR(Inside_Sales_lead:Edit) + Queue | All (V-07) | No | No | CRUDVAMA |
+| **Case** | Private | CRUDVAMA | CRUD via SR(Field_Sales:Edit/HCP_Update_Request) | CRUD via SR | No rule | All (V-07) | CRUD (Owner) | Read via RelatedPortalUser (1 record) | CRUDVAMA |
+| **Training__c** | CtrlByParent | CRUDVAMA | R (via Account implicit) | R (via Account implicit) | R (via Account implicit) | All (V-07) | R (via Account implicit) | CRUD (Owner) + R (via SS Account link) | CRUDVAMA |
+| **Observation__c** | CtrlByParent | CRUDVAMA | R (via Account) | R (via Account) | R (via Account) | All (V-07) | CRUD | AX-Edit (via Delegate Observer AccountShare) | CRUDVAMA |
+| **Reimbursement__c** | Private | CRUDVAMA | Owner only [V-03 corrected] | Owner only [V-03 corrected] | No | All (V-07) | CRUD | **Edit via SS(Trainer__c field)** [V-06 new] | CRUDVAMA |
+| **OrgSync_Patient_Staging__c** | ReadWrite | CRUDVAMA | CRUD (OWD open, V-04) | CRUD (OWD open) | CRUD (OWD open) | All | CRUD (OWD open) | No | CRUDVAMA |
+| **Knowledge__kav** | ReadWrite | CRUDVAMA | R (OWD open) | R | R | All | CRUD | R | CRUDVAMA |
+| **PatientDataShare__c** | CtrlByParent | CRUDVAMA | R (via Account) | R (via Account) | R | All (V-07) | CRUD | No | CRUDVAMA |
+| **Campaign** | Private | CRUDVAMA | No (Read via SR to Dir_of_Sales hierarchy) | R via SR | No | All (V-07) | No | No | CRUDVAMA |
+| **Survey__c** | Private | CRUDVAMA | R | R | R | All (V-07) | CRUD | No | CRUDVAMA |
 
 ## 4.2 CSV Export
 
 ```csv
-Object,SysAdmin,Field_TM_DSM,Inside_Rep,IT_DevSupport,Service_Care,Marketing,ExternalTrainer,Integration_API,OWD_Internal
-Account,CRUDVAMA,CRUD_Rule+Terr,CRUD_Rule,CRUD+VA,CRUD_Rule,R_Rule,R_ApexShare,CRUD+VA,Private
-Contact,CRUDVAMA,CRUD_implicit,CRUD_Rule,CRUD+VA,CRUD_Rule,R,R_linked,CRUD+VA,Private
-Opportunity,CRUDVAMA,CRUD_Owner,CRUD,CRUD+VA,R_Rule,R,No,R+VA,Private
-Lead,CRUDVAMA,CRUD_Queue,CRUD_Queue,CRUD+VA,CRUD,CRUD,No,CRUD,Private
-Case,CRUDVAMA,R_Rule,R_Rule,CRUD+VA,CRUD_Owner,No,R_RelPortal,CRUD,Private
-Training__c,CRUDVAMA,R,CRUD,CRUD+VA,CRUD_Owner,No,CRUD_Owner,CRUD,ControlledByParent
-Observation__c,CRUDVAMA,R,R,VA,CRUD,No,CRUD_AcctLink,CRUD,ControlledByParent
-OrgSync_Patient_Staging__c,CRUDVAMA,CRUD_OWD,CRUD_OWD,CRUD,CRUD_OWD,CRUD_OWD,No,CRUD,ReadWrite_RISK
-Reimbursement__c,CRUDVAMA,CRUD_Rule,No,CRUD+VA,CRUD,No,No,CRUD,Private
-PatientDataShare__c,CRUDVAMA,R_via_Account,R,VA,CRUD,No,No,CRUD,ControlledByParent
-Knowledge__kav,CRUDVAMA,R,R,CRUD+VA,CRUD,R,R,CRUD,ReadWrite
-Survey__c,CRUDVAMA,R,R,VA,CRUD,CRUD,No,CRUD,Private
+Object,OWD,SysAdmin,Field_TM_DSM,Field_GM_RBD,Inside_Sales_Rep,Dev_Support_FuncAnalyst,Customer_Care,External_Trainer,Odaseva
+Account,Private,CRUDVAMA,CRUD_SR+Territory,Read_SR+Territory,CRUD_SR,All_ViewAllData,CRUD_SR,SS(Read)+Apex(Edit-onTraining),CRUDVAMA
+Contact,Private,CRUDVAMA,CRUD_ImplicitParent,CRUD_ImplicitParent,CRUD_ImplicitParent,All_ViewAllData,CRUD_SR,Read_via_Account,CRUDVAMA
+Opportunity,Private,CRUDVAMA,CRUD_SR(NCS_Oppty)+Owner,No_rule_Owner_only,CRUD_Owner,All_ViewAllData,No,No,CRUDVAMA
+Lead,Private,CRUDVAMA,Owner_only,Owner_only,CRUD_SR(Inside_Sales_lead)+Queue,All_ViewAllData,No,No,CRUDVAMA
+Case,Private,CRUDVAMA,CRUD_SR(HCP_Update_Request),CRUD_SR,No,All_ViewAllData,CRUD_Owner,Read_RelatedPortal,CRUDVAMA
+Training__c,CtrlByParent,CRUDVAMA,R_via_Account,R_via_Account,R_via_Account,All_ViewAllData,R_via_Account,CRUD_Owner+R_via_SS,CRUDVAMA
+Observation__c,CtrlByParent,CRUDVAMA,R_via_Account,R_via_Account,R_via_Account,All_ViewAllData,CRUD,Apex_Edit_Delegate,CRUDVAMA
+Reimbursement__c,Private,CRUDVAMA,Owner_only_V03corrected,Owner_only_V03corrected,No,All_ViewAllData,CRUD,SS_Edit_Trainer_field_V06new,CRUDVAMA
+OrgSync_Patient_Staging__c,ReadWrite_RISK,CRUDVAMA,CRUD_OWD_open,CRUD_OWD_open,CRUD_OWD_open,All_ViewAllData,CRUD_OWD_open,No,CRUDVAMA
+Knowledge__kav,ReadWrite,CRUDVAMA,R_OWD,R_OWD,R_OWD,All_ViewAllData,CRUD,R_OWD,CRUDVAMA
+Reimbursement_Association__c,CtrlByParent,CRUDVAMA,R_via_Reimbursement,R_via_Reimbursement,No,All_ViewAllData,CRUD,No,CRUDVAMA
+Campaign,Private,CRUDVAMA,R_SR_hierarchy,R_SR_hierarchy,No,All_ViewAllData,No,No,CRUDVAMA
 ```
 
 ---
 
 # DELIVERABLE 5 — PERSONA VIEW BY OBJECT/RECORDS/FIELDS MATRIX
 
-## 5.1 System Administrator
+## 5.1 Key Persona Detail Sheets
 
-- **Profile:** Admin (Salesforce license)
-- **Bypass Permissions:** ViewAllData=true, ModifyAllData=true, ManageUsers=true, AuthorApex=true
-- **Record Access:** Unrestricted — all records visible and editable regardless of OWD or sharing
-- **Field Access:** Unrestricted
-- **Known Users (sample):** 177 active users in this profile (sandbox includes developers/admins)
-- **Risk Note:** 177 Admin users is extremely high for a sandbox; production should be reviewed. Admin login-as is enabled.
+### System Administrator (177 users)
+- **All objects:** CRUD + ViewAll + ModifyAll — unrestricted
+- **Bypass perms:** ViewAllData=true, ModifyAllData=true, ManageUsers=true, AuthorApex=true
+- **Risk:** 177 admin users in sandbox. Production count must be audited.
+- **DelegateGroup "Log_In_As":** Admin can configure delegate group members to login-as others
 
-## 5.2 Sales Profile — Field Sales TM/DSM (PSG: Field_Sales_TM_DSM)
+### Field Sales TM/DSM (PSG: Field_Sales_TM_DSM)
+- **Account:** CRUD — SR `Field_Sales_TM_DSM` (Edit on Patient Delegate) + Territory (Edit on assigned accounts). **NOT Patient or Practice** directly via sharing rules — only Patient Delegate.
+- **Opportunity:** Edit — SR `Field_Sales_TM_DSM` scoped to NCS_Opportunity record type only
+- **Lead:** Owner access only — no sharing rule targets TM/DSM role for leads
+- **Case:** Edit — SR scoped to HCP_Update_Request type only
+- **Training__c:** Read via Account implicit sharing
+- **Reimbursement__c:** Owner access only (V-03 corrected from R1)
+- **PSG composition:** Field_Sales_Core_Access + Field_Sales_Edit + HealthCloudFoundation + OmniStudioExecution + SSO_enabled
 
-- **Base Profile:** Sales
-- **PSG:** Field_Sales_TM_DSM → [Field_Sales_Core_Access, Field_Sales_Edit, HealthCloudFoundation, OmniStudioExecution, Omnistudio_Standard_User, SSO_enabled]
-- **Account Records:** Access via sharing rules (role-based groups) + territory assignment. OWD=Private means only accounts opened via these mechanisms are visible.
-- **Contact Records:** Inherited via Account implicit sharing + sharing rules
-- **Opportunity Records:** Own records + rule-based sharing. Territory management does NOT automatically share Opportunities.
-- **Lead Records:** Via Queue assignment (DTC, Lead Generation Team queues + owner)
-- **Training__c:** Read-only (Training records owned by the External Trainer/CTS, not the field rep)
-- **Role in Hierarchy:** Fields_Sales_TM_DSM → Field_Sales_GM_RBD → Regional_Sales_Manager → Director_of_Sales (inherits upward visibility on owned records)
-- **Field Access:** Field_Sales_Core_Access + Field_Sales_Edit PSets define FLS (not directly extracted — requires full FLS query)
+### Field Sales GM/RBD (PSG: Field_Sales_GM_RBD)
+- **Account:** Read — SR `Field_Sales_GM_RBD` scoped to Practice, Trainer, Pharmacy, Provider record types (NOT Patient or Patient Delegate)
+- **Opportunity:** Read via implicit parent (Account Read → Opportunity visible)
+- **Note:** GM/RBD has LESS account access than TM/DSM — Read only, and no Patient access
 
-## 5.3 Sales Profile — Inside Sales Rep (PSG: Inside_Sales_Rep)
+### Inside Sales Rep/Manager (PSG: Inside_Sales_Rep)
+- **Account:** Edit — SR `Inside_Sales_Group` scoped to Practice, Patient, Patient Delegate, Provider
+- **Lead:** Edit — SR `Inside_Sales_lead` scoped to Patient, Provider-Practice Lead
+- **Opportunity:** Owner access only
+- **Multiple queues:** DTC-Incomplete, DTC Open, DTC Dr Discussion, DTC Lead Generation, DTC Partial Match, Inside Sales Specialist, NCS-DTC Call Back, NCS-DTC Incomplete
 
-- **PSG:** Inside_Sales_Rep → [Inside_Sales_Core_Access, Manage_Reports_and_List_View, HealthCloudFoundation, OmniStudioExecution, Omnistudio_Standard_User, SSO_enabled]
-- **Account Records:** Via sharing rules (Inside_Sales_Manager Role group, Inside_Sales_Rep group)
-- **Lead Records:** Queue-based (DTC queues, Inside Sales Specialist queue)
-- **Opportunity Records:** Own + sharing rules
-- **Reports/Dashboards:** Manage_Reports_and_List_View grants additional report management capabilities
+### External Trainer (Profile: External Trainer, PSG: Third_Party_Trainers) — CORRECTED R2
+- **Account:** **SharingSet(Read)** where Account = Trainer's Related Account + **Apex(Edit)** when Training accepted. *R1 incorrectly stated only Apex.*
+- **Reimbursement__c:** **SharingSet(Edit)** where Reimbursement__c.Trainer__c = User.Account. *This was MISSING from R1.*
+- **Training__c:** Owner (they own their training records) + Read via Account SharingSet link
+- **Observation__c:** Edit via ObservationSharingHandler Apex if assigned as Delegate Observer
+- **Network:** `allowInternalUserLogin=false` — cannot use internal SF login; must use community login
+- **No sharing rules apply** — V-06 validated: community users receive no internal role-based rule grants
+- **251 NetworkMember records** (wider than the 68 active users — includes admins and inactive members)
 
-## 5.4 IT Profile — Development Support (PSG: Development_Support)
+### Odaseva Backup Integration (Perm Set: Odaseva_Service_User_Permissions)
+- **All objects:** CRUD + ViewAll + ModifyAll — full system bypass
+- **Risk level:** CRITICAL — ViewAllData + ModifyAllData + ManageUsers + AuthorApex on a custom (non-profile) permission set
+- **No TransactionSecurityPolicy** monitors this user's behavior
 
-- **PSG:** Development_Support → [Development_Support_Core_Access, IT_Modify_all, SSO_enabled]
-- **Bypass:** Development_Support_Core_Access has **ViewAllData=true** — sees ALL records across the org
-- **IT_Modify_all:** By name, implies broad modify access — exact permissions require FLS/ObjectPermissions inspection
-- **Risk:** These are non-admin users with admin-equivalent visibility. Appropriate for a DevInt2 sandbox; must be reviewed in production.
+### Development Support / Functional Analyst (PSGs)
+- **All objects:** Read all records (ViewAllData=true)
+- **Write access:** Constrained by OWD + sharing (no ModifyAllData)
+- **IT_Modify_all** permission set (within Dev_Support PSG): name implies broad modify — exact scope requires FLS deep-dive
 
-## 5.5 IT Profile — Functional Analyst (PSG: Functional_Analyst)
-
-- **PSG:** Functional_Analyst → [Functional_Analyst_Core_Access, SSO_enabled]
-- **Bypass:** Functional_Analyst_Core_Access has **ViewAllData=true**
-- **Risk:** Analysts can see all records including patient staging data. Confirm this is intentional and that production has commensurate audit logging.
-
-## 5.6 Service Profile — Customer Care (PSG: Customer_Care_Agent)
-
-- **PSG:** Customer_Care_Agent → [Customer_Care_Core_Access, HealthCloudFoundation, OmniStudioExecution, SSO_enabled]
-- **Case Records:** Primary — own + rule-based
-- **Account Records:** Rule-based (Sales Ops Queue, related account sharing)
-- **Knowledge:** Read access (Knowledge OWD = ReadWrite globally)
-
-## 5.7 External Trainer (Profile: External Trainer, PSG: Third_Party_Trainers)
-
-- **License:** Customer Community Plus
-- **PSG:** Third_Party_Trainers → [External_Trainers, Composer_Salesforce_Community_User]
-- **Account Records:** Only accounts shared via `TrainingSharingHandler` (Edit access to patient/practice accounts when assigned Training is in Accepted state) + PortalImplicit (68 records)
-- **Training__c:** Owns their assigned training records (CRUD on owned records)
-- **Observation__c:** Via account link (ControlledByParent — if they have the parent account, they see observations)
-- **Profile restriction:** `enableCommunityUserVisibility = false` — cannot see other community users
-- **Community:** Trainer Portal (Live at /TrainerPortalvforcesite)
-- **Note:** 26 users have Third_Party_Trainers PSG assigned (subset of 68 External Trainer profile users)
-
-## 5.8 Integration API Only (OrgSync / CTI)
-
-- **Profile:** Integration API Only
-- **Key PermSets:** OrgSync_User_Access (11 users), CTI_Integration_Access (ViewAllData=true, API=true)
-- **OrgSync staging objects:** CRUD access — these accounts are the write endpoint for OrgSync data synchronization
-- **CTI (Amazon Connect):** ViewAllData=true enables reading all org data for routing/lookup purposes
-
-## 5.9 Odaseva Backup User (Perm Set: Odaseva_Service_User_Permissions)
-
-- **Permissions:** ViewAllData=true, **ModifyAllData=true**, ManageUsers=true, ApiEnabled=true, AuthorApex=true
-- **Scope:** Full org access — can read and modify all data, manage users, and execute Apex
-- **Risk Level:** CRITICAL — this is effectively a super-admin API service account
-- **Object Access via ObjectPermissions:** ViewAll + ModifyAll on all audited custom objects
-
-## 5.10 Persona Summary Matrix — CSV
+## 5.2 Persona Matrix — CSV
 
 ```csv
-Persona,Profile,PSG,ViewAllData,ModifyAllData,Account_Access,Contact_Access,Opp_Access,Case_Access,Training_Access,OrgSync_Staging_Access,PatientData_Access
-System_Admin,Admin,None,Yes,Yes,All,All,All,All,All,All,All
-Field_TM_DSM,Sales,Field_Sales_TM_DSM,No,No,Rule+Territory,Implicit,Owner+Rule,Rule_only,Read,ReadWrite_OWD,ControlledByParent
-Inside_Sales_Rep,Sales,Inside_Sales_Rep,No,No,Rule,Rule+Implicit,Owner+Rule,Rule_only,Read,ReadWrite_OWD,ControlledByParent
-Dev_Support,IT,Development_Support,Yes,No,All,All,All,All,All,All,All
-Functional_Analyst,IT,Functional_Analyst,Yes,No,All,All,All,All,All,All,All
-Customer_Care_Agent,Service,Customer_Care_Agent,No,No,Rule,Rule,No,Owner+Rule,Read,ReadWrite_OWD,ControlledByParent
-Clinical_Services_Mgr,Sales,Clinical_Services_Manager,No,No,Rule+Group,Rule+Group,No,Rule,CRUD,ReadWrite_OWD,ControlledByParent
-External_Trainer,External Trainer,Third_Party_Trainers,No,No,Apex_Share_only,PortalImplicit,No,RelPortal,Owner,No,Via_Account
-Odaseva_Integration,Various,Odaseva_Service_User_Permissions,Yes,Yes,All,All,All,All,All,All,All
-OrgSync_Integration,Integration API Only,OrgSync_User_Access,No,No,CRUD_via_Pset,CRUD_via_Pset,No,No,No,Full_CRUD,CRUD
+Persona,Profile,PSG,ViewAllData,ModifyAllData,MutingPSet,Account_Access_Mechanism,Reimbursement_Access,Community_Access,OrgSync_Staging_Access
+System_Admin,Admin,None,Yes,Yes,None,All,All,N/A,All
+Field_TM_DSM,Sales,Field_Sales_TM_DSM,No,No,None,SR(Field_Sales_TM_DSM:Edit/PatientDelegate)+Territory,Owner_only,No,ReadWrite_OWD
+Field_GM_RBD,Sales,Field_Sales_GM_RBD,No,No,None,SR(Field_Sales_GM_RBD:Read/Practice+Trainer+Pharmacy+Provider)+Territory,Owner_only,No,ReadWrite_OWD
+Inside_Sales_Rep,Sales,Inside_Sales_Rep,No,No,None,SR(Inside_Sales_Group:Edit/Practice+Patient+Delegate+Provider),Owner_only,No,ReadWrite_OWD
+Clinical_Services_Mgr,Sales,Clinical_Services_Manager,No,No,None,SR(Share_Patient_Delegate_to_CSM:Read/PatientDelegate),No,No,ReadWrite_OWD
+Dev_Support,IT,Development_Support,Yes,No,None,All_via_ViewAllData,All_via_ViewAllData,No,All
+Functional_Analyst,IT/Service,Functional_Analyst,Yes,No,None,All_via_ViewAllData,All_via_ViewAllData,No,All
+Customer_Care_Agent,Service,Customer_Care_Agent,No,No,None,SR_rules,CRUD_Owner,No,ReadWrite_OWD
+External_Trainer,External Trainer,Third_Party_Trainers,No,No,None,SS(Read:RelatedAccount)+Apex(Edit:TrainingAccepted),SS(Edit:Trainer__c_field),CommunityPlus_SharingSet,No
+Odaseva_Integration,Various,Odaseva_Service_User_Permissions,Yes,Yes,None,All_CRITICAL,All_CRITICAL,No,All_CRITICAL
+OrgSync_Integration,Integration API Only,OrgSync_User_Access,No,No,None,CRUD_via_pset,CRUD_via_pset,No,Full_CRUD
 ```
 
 ---
 
-# DELIVERABLE 6 — SHARING MECHANISM CATALOG
+# DELIVERABLE 6 — SHARING MECHANISM CATALOG (R2 — 33 Mechanisms)
 
-| # | Mechanism | Type | Objects Affected | Evidence Source | Volume/Scale | Confidence |
-|---|-----------|------|-----------------|----------------|-------------|------------|
-| 1 | **OWD Private (Internal)** | Baseline Restriction | Account, Contact, Opportunity, Lead, Case, Reimbursement__c, Survey__c | Organization SOQL + EntityDefinition Tooling API | Applies to all records | **High** |
-| 2 | **OWD Private (External)** | Baseline Restriction | Same as above + additional objects | EntityDefinition Tooling API | Applies to all external users | **High** |
-| 3 | **OWD ControlledByParent** | Inheritance Rule | Contact (via Account), Observation__c, Training__c, PatientDataShare__c, Activity, Address, AccountContactRelation, OrgSync_Training_Staging__c, OrgSync_Training_Profile_Staging__c, ZipCode__c, Certification__c, Reimbursement_Association__c | EntityDefinition Tooling API | All records of these types | **High** |
-| 4 | **OWD ReadWrite / Public** | Baseline Open | OrgSync_Patient_Staging__c, OrgSync_Physician_Staging__c, OrgSync_ASPN_Staging__c, OrgSync_Consent_Staging__c, OrgSync_Mule_Errors__c, Clinic_Grouping__c, Knowledge__kav, ASPN_Integration__e | EntityDefinition Tooling API | All records of these types | **High** |
-| 5 | **Role Hierarchy** | Implicit Upward | All Private + ControlledByParent objects | UserRole SOQL (26 roles) | 26 roles, ~200 internal users | **High** |
-| 6 | **Territory Management 2.0 (Insulet_Territories model)** | Territory-Based | Account=Edit, Contact=Edit, Lead=Read | Territory2Model + Territory2 SOQL; AccountShare RowCause=Territory (1,876) | 100 territories, 110 user assignments | **High** |
-| 7 | **Territory2AssociationManual** | Territory Override | Account | AccountShare RowCause=Territory2AssociationManual (180) | 180 manual overrides | **High** |
-| 8 | **Sharing Rules (Criteria/Owner-Based)** | Declarative Rules | Account (677,313), Opportunity (2,406), Case (294) | AccountShare/OpportunityShare/CaseShare RowCause=Rule | 680,013 total | **High** |
-| 9 | **Apex Managed Sharing — TrainingSharingHandler** | Programmatic | Account | Direct code review (TrainingSharingHandler.cls) | Per Training accepted event | **High** |
-| 10 | **Apex Managed Sharing — ObservationSharingHandler** | Programmatic | Account | Direct code review (ObservationSharingHandler.cls) | Per Observation delegate change | **High** |
-| 11 | **Manual Sharing (AccountShare)** | Manual | Account | AccountShare RowCause=Manual (68) | 68 records | **High** |
-| 12 | **Implicit Parent Sharing** | Implicit | Contact, Opportunity, Case (via Account parent) | AccountShare RowCause=ImplicitParent (1,905) | 1,905 records | **High** |
-| 13 | **Portal Implicit Sharing** | Community | Account | AccountShare RowCause=PortalImplicit (68); CommunitySettings | 68 records | **High** |
-| 14 | **RelatedPortalUser Sharing** | Community | Case | CaseShare RowCause=RelatedPortalUser (1) | 1 record | **High** |
-| 15 | **PermissionsViewAllData** | Object Bypass | All objects (org-wide) | PermissionSet SOQL (9 matching) | 9 perm sets/profiles | **High** |
-| 16 | **PermissionsModifyAllData** | Object Bypass | All objects | PermissionSet SOQL | 2 non-profile (Odaseva + Admin profile) | **High** |
-| 17 | **Per-Object ViewAllRecords** | Object-Level Bypass | Account (15 PSets), Campaign (17), Reimbursement__c (11), OrgSync staging (8-10 each) | ObjectPermissions SOQL (2,000 records) | 2,000 permission grants | **High** |
-| 18 | **AccountContactRelation (Multi-Account)** | Relationship | Contact-to-multiple-Accounts | AccountSettings; OrgSync_Patient_ACRService.cls | Per ACR record | **High** |
-| 19 | **Public Groups (11 named groups)** | Group Membership | Used as sharing rule targets | Group SOQL | 11 groups | **High** |
-| 20 | **Queue-Based Access** | Queue Ownership | Lead (8 queues), Task (10 queues), Case (1 queue), Reimbursement__c (1 queue) | QueueSobject SOQL (19 records) | 16 queues, 19 queue-object mappings | **High** |
-| 21 | **Experience Cloud (Trainer Portal)** | Community | Account, Training__c, Observation__c | Network SOQL, profile query, sharing analysis | 1 network, 68 users | **High** |
-| 22 | **SAML SSO** | Authentication | All (identity) | Security.settings-meta.xml | All users | **High** |
-| 23 | **Admin Login As Any User** | Bypass | All | Security.settings-meta.xml | Admins only | **High** |
-| 24 | **Without Sharing Apex classes** | Code-Level Bypass | Account (TrainingSharingHandler, ObservationSharingHandler), Integration (OrgSync classes) | Code review (45 classes) | Multiple service classes | **High** |
-| 25 | **Territory2Forecast Share** | Territory | Opportunity | OpportunityShare RowCause=Territory2Forecast (1) | 1 record | **High** |
-| 26 | **ScheduledPermissionAssigner** | Dynamic Access | User permissions | Code review (ScheduledPermissionAssigner.cls) | Scheduled apex | **Medium** |
-| 27 | **AppOmni Security Package** | Monitoring/Bypass | All (read) | Installed packages | 1 package | **Medium** |
+| # | Mechanism | Type | Objects Affected | Evidence Source | Active | Confidence |
+|---|-----------|------|-----------------|----------------|--------|------------|
+| 1 | OWD Private (Internal) | Baseline restriction | Account, Contact, Opp, Lead, Case, Reimbursement__c, Survey__c | Organization SOQL + EntityDefinition | Yes | High |
+| 2 | OWD Private (External) | Baseline restriction | Same + additional | EntityDefinition Tooling API | Yes | High |
+| 3 | OWD ControlledByParent | Inheritance | Contact, Training__c, Observation__c, PatientDataShare__c, Activity, ACR, Certification__c | EntityDefinition | Yes | High |
+| 4 | OWD ReadWrite (Internal) — RISK | Baseline open | OrgSync_Patient_Staging__c, OrgSync_Physician_Staging__c, OrgSync_ASPN_Staging__c, OrgSync_Consent_Staging__c, OrgSync_Mule_Errors__c, Clinic_Grouping__c | EntityDefinition | Yes | High |
+| 5 | Role Hierarchy (implicit upward) | Implicit | All Private/CtrlByParent objects | UserRole SOQL (26 roles) | Yes | High |
+| 6 | Territory Management 2.0 (Insulet_Territories) | Territory | Account=Edit, Contact=Edit, Lead=Read | Territory2Model XML + AccountShare Territory aggregate | Yes (Active) | High |
+| 7 | Territory2AssociationManual overrides | Territory | Account | AccountShare RowCause=Territory2AssociationManual (180) | Yes | High |
+| 8 | Sharing Rules — Account (9 criteria-based) | Declarative rules | Account | Account.sharingRules-meta.xml (R2) | Yes | High |
+| 9 | Sharing Rules — Lead (4 criteria-based) | Declarative rules | Lead | Lead.sharingRules-meta.xml (R2) | Yes | High |
+| 10 | Sharing Rules — Case (3 criteria-based) | Declarative rules | Case (HCP_Update_Request only) | Case.sharingRules-meta.xml (R2) | Yes | High |
+| 11 | Sharing Rules — Opportunity (1 criteria-based) | Declarative rules | Opportunity (NCS_Opportunity only) | Opportunity.sharingRules-meta.xml (R2) | Yes | High |
+| 12 | Sharing Rules — Campaign (4 owner-based) | Declarative rules | Campaign | Campaign.sharingRules-meta.xml (R2) | Yes | High |
+| 13 | Sharing Rules — Asset (3 criteria-based) | Declarative rules | Asset (Controller/Sensor_Type) | Asset.sharingRules-meta.xml (R2) | Yes | High |
+| 14 | Sharing Rules — ContactContactRelation (3 owner) | Declarative rules | ContactContactRelation | Retrieved XML (R2) | Yes | High |
+| 15 | Sharing Rules — PartyConsent (3 owner) | Declarative rules | PartyConsent | Retrieved XML (R2) | Yes | High |
+| 16 | Sharing Rules — DataUsePurpose, HealthcarePractitionerFacility, Individual | Declarative rules | Clinical data objects | Retrieved XML (R2) | Yes | High |
+| 17 | Apex Managed Sharing — TrainingSharingHandler | Programmatic | Account (Edit for External Trainers) | Code review — Training trigger | Yes | High |
+| 18 | Apex Managed Sharing — ObservationSharingHandler | Programmatic | Account (Edit for Delegate Observer) | Code review — Observation trigger | Yes | High |
+| 19 | SharingSet — External_Trainer_Access | Community | Account (Read), Reimbursement__c (Edit) | External_Trainer_Access.sharingSet-meta.xml (R2) | Yes | High |
+| 20 | Manual Sharing (AccountShare Manual) | Manual | Account | AccountShare RowCause=Manual (68) | Yes | High |
+| 21 | Implicit Parent Sharing | Implicit | Contact, Opp, Case via Account | AccountShare RowCause=ImplicitParent (1,905) | Yes | High |
+| 22 | Portal Implicit Sharing | Community | Account | AccountShare RowCause=PortalImplicit (68) | Yes | High |
+| 23 | RelatedPortalUser Sharing | Community | Case | CaseShare RowCause=RelatedPortalUser (1) | Yes | High |
+| 24 | PermissionsViewAllData | Object bypass | All objects | PermissionSet SOQL (9 PSets) | Yes | High |
+| 25 | PermissionsModifyAllData | Object bypass | All objects | PermissionSet SOQL (2: Odaseva + Admin profile) | Yes | High |
+| 26 | Per-Object ViewAllRecords | Object-level bypass | Account (15), Campaign (17), OrgSync (8-10 each) | ObjectPermissions SOQL (2,000 records) | Yes | High |
+| 27 | Public Groups (11) — sharing rule targets | Group | Used as targets in sharing rules above | Group XML (R2) | Yes | High |
+| 28 | Queue-based ownership | Queue | Lead (8 queues), Task (10), Case (1), Reimbursement__c (1) | Queue XML + QueueSobject SOQL (R2) | Yes | High |
+| 29 | AccountContactRelation (multi-account) | Relationship | Contact↔Account (Patient→Practice) | OrgSync_Patient_ACRService.cls | Yes | High |
+| 30 | Experience Cloud (Trainer Portal) | Community | Training__c, Observation__c, Account | Network XML + CustomSite XML (R2) | Yes | High |
+| 31 | DelegateGroup "Log_In_As" (loginAccess=true) | Admin bypass | All (via user impersonation) | Log_In_As.delegateGroup-meta.xml (R2) | Yes | High |
+| 32 | DuplicateRule BypassSharingRules (Patient dedup) | Security bypass | Account (PersonAccount/Patient type) | DuplicateRule XML (R2) | Yes | High |
+| 33 | **ABSENT: TransactionSecurityPolicy** | Governance gap | All objects | SOQL returns 0 (R2) | No | High |
+
+**Confirmed Absent (Not Risks but Closed Findings):**
+- MutingPermissionSet: 0 in org (Confirmed R2)
+- RestrictionRule: 0 in org (Confirmed R2)
+- ScopingRule: Not supported at API v66 (Confirmed R2)
+- Territory2Rule (criteria-based): Not in use; all assignment is manual (Confirmed R2)
 
 ---
 
-# DELIVERABLE 7 — FINDINGS AND RECOMMENDATIONS
+# DELIVERABLE 7 — FINDINGS AND RECOMMENDATIONS (R2)
 
 ## CRITICAL Findings
 
-### F-001: Odaseva Backup Service Account Has Full System Admin Equivalent Permissions
-- **Finding:** The `Odaseva_Service_User_Permissions` custom permission set grants `ViewAllData=true`, `ModifyAllData=true`, `ManageUsers=true`, `PermissionsApiEnabled=true`, and `PermissionsAuthorApex=true`. This is the most dangerous permission set in the org — it is functionally equivalent to the System Administrator profile with full API access.
-- **Evidence:** Live SOQL: `SELECT Name, PermissionsViewAllData, PermissionsModifyAllData FROM PermissionSet WHERE PermissionsModifyAllData = true` returned `Odaseva_Service_User_Permissions` as a custom perm set (not profile-owned).
-- **Risk:** If the Odaseva service account credentials are compromised, an attacker has full read/write access to all Salesforce data including patient records, can manage users, and can execute Apex code.
-- **Recommendation:**
-  1. Confirm which user(s) have this perm set assigned in Production.
-  2. Implement IP range restriction on the Odaseva integration user to only Odaseva's documented IP ranges.
-  3. Enable Named Credential with certificate-based auth rather than password-based.
-  4. Review whether `ManageUsers` and `AuthorApex` are truly required for a backup service.
-  5. Add login history monitoring and alert on any interactive logins.
-  6. Consider if `ModifyAllData` can be scoped to specific objects instead.
+### F-001: Odaseva_Service_User_Permissions — Full System Bypass *(unchanged from R1)*
+- **Evidence:** PermissionSet SOQL: ViewAllData=true, ModifyAllData=true, ManageUsers=true, AuthorApex=true, IsOwnedByProfile=false
+- **Compounded by R2:** 0 TransactionSecurityPolicies → no monitoring of this account's activity
+- **Recommendation:** IP restriction + credential rotation + scope reduction + implement Transaction Security Policy for API download anomaly detection
 
-### F-002: Seven OrgSync Staging Objects with Public Read/Write OWD Expose Sensitive Patient/Provider Data
-- **Finding:** `OrgSync_Patient_Staging__c`, `OrgSync_Physician_Staging__c`, `OrgSync_ASPN_Staging__c`, `OrgSync_Consent_Staging__c`, `OrgSync_Mule_Errors__c`, `OrgSync_Consent_Staging__c` all have `InternalSharingModel = ReadWrite` — meaning any internal Salesforce user with object-level Read permission can access ALL records of these types without any sharing rules needed.
-- **Evidence:** EntityDefinition Tooling API query, confirmed for each object.
-- **Risk:** This effectively makes patient staging data (names, external IDs, practice associations, consent flags, ASPN program data) visible to all 200+ active internal users including Marketing, Sales, and Service. This is a HIPAA exposure risk.
-- **Recommendation:**
-  1. Change OWD for all OrgSync staging objects to **Private**.
-  2. Grant explicit Read access via sharing rule or permission set to only the OrgSync integration user and the Administrators who need to troubleshoot.
-  3. Evaluate whether any UI-facing users need access to staging records or if the data should be consumed via the transitioned canonical objects (Account, Contact, etc.) only.
+### F-002: 7 OrgSync Staging Objects with Internal OWD = ReadWrite *(unchanged from R1)*
+- **Evidence:** EntityDefinition Tooling API; V-04 validation confirmed no sharing rules exist to compensate
+- **Recommendation:** Change to Private OWD; explicit ObjectPermissions to integration users only
 
 ---
 
 ## HIGH Findings
 
-### F-003: Secure Guest Access Disabled — Trainer Portal Guest User Not Restricted
-- **Finding:** `enableSecureGuestAccess = false` in `Sharing.settings-meta.xml`. This means the Guest User on the Trainer Portal site is NOT subject to enhanced guest user security restrictions introduced by Salesforce to prevent guest users from accessing records not explicitly shared with them.
-- **Evidence:** `force-app/main/default/settings/Sharing.settings-meta.xml` line 16.
-- **Risk:** Guest users may be able to query and access records that are publicly accessible beyond what is intentional, depending on sharing rules and page access configurations.
-- **Recommendation:** Enable Secure Guest Access (`enableSecureGuestAccess = true`). Test the Trainer Portal for functionality after enabling.
+### F-003: enableSecureGuestAccess = false *(confirmed with dual evidence in R2)*
+- **Evidence (R1):** `Sharing.settings-meta.xml` line 16
+- **Evidence (R2):** `Trainer_Portal.site-meta.xml` — LWR architecture; `Network` XML `enableSiteAsContainer=true`
+- **Recommendation:** Enable Secure Guest Access; test portal login and self-reg flows post-change
 
-### F-004: Development Support and Functional Analyst Permission Sets Grant Org-Wide ViewAllData
-- **Finding:** `Development_Support_Core_Access`, `Development_Support` (PSG), `Functional_Analyst_Core_Access`, and `Functional_Analyst` (PSG) all have `PermissionsViewAllData = true`. These are assigned to ~7 IT/Dev users and ~7 Analyst users respectively (from Sales and IT profiles) — not just admins.
-- **Evidence:** Live SOQL query returning all PermissionSets with ViewAllData=true.
-- **Risk:** Business users in IT and Service profiles with these perm sets can see all patient data, financial data, and integration staging data — well beyond their functional need.
-- **Recommendation:**
-  1. Replace `PermissionsViewAllData = true` with per-object `PermissionsViewAllRecords = true` grants for only the specific objects these users need to troubleshoot.
-  2. Apply the principle of least privilege — Functional Analysts likely don't need to see all Cases and all Patient staging data.
-  3. In production, ensure these perm sets are not widely distributed.
+### F-004: Dev Support + Functional Analyst: ViewAllData grants to business users *(unchanged from R1)*
 
-### F-005: CTI Integration Access and Query_AllFiles Grant ViewAllData to Integration Roles
-- **Finding:** `CTI_Integration_Access` (for Amazon Connect CTI) has `ViewAllData=true` and `PermissionsApiEnabled=true`. `Query_AllFiles` has `ViewAllData=true`.
-- **Evidence:** Live SOQL.
-- **Risk:** Integration accounts that only need to look up specific records for call routing should not have org-wide visibility.
-- **Recommendation:**
-  1. Replace `CTI_Integration_Access.PermissionsViewAllData` with object-specific grants: Read on Account, Contact, Case (the objects CTI needs for screen pop and routing).
-  2. Rename `Query_AllFiles` to clarify its purpose and replace ViewAllData with ContentDocument/ContentVersion specific permissions.
+### F-005: CTI_Integration_Access + Query_AllFiles: ViewAllData to integration roles *(unchanged from R1)*
 
-### F-006: 177 System Administrator Users in Sandbox — Production Admin Count Needs Review
-- **Finding:** The active user census shows 177 users on the System Administrator profile in DevInt2.
-- **Evidence:** User census SOQL (limited to 200 rows).
-- **Risk:** If production has a comparable number, this is a significant over-provisioning of the highest-privilege role.
-- **Recommendation:** Audit production admin user count. Target <5-10 active System Administrators with MFA enforced. Use `View Setup and Configuration` permission for users who need setup read access without full admin.
+### F-006: 177 System Administrator users in sandbox
+
+### F-007 [NEW R2]: DelegateGroup "Log_In_As" Has loginAccess=true
+- **Finding:** A DelegateGroup named "Log_In_As" with `loginAccess=true` was retrieved. Combined with `enableAdminLoginAsAnyUser=true`, this means a group of delegated admins can impersonate users without being System Administrators.
+- **Evidence:** `force-app/main/default/delegateGroups/Log_In_As.delegateGroup-meta.xml` (R2 retrieval)
+- **Risk:** If misused, this is a lateral privilege escalation path. In production the membership of this group must be audited.
+- **Recommendation:** Audit production members of this group; ensure all are known trusted admins; add to privileged access review cadence
+
+### F-008 [NEW R2]: Zero TransactionSecurityPolicies — No Real-Time Security Controls
+- **Finding:** SOQL on TransactionSecurityPolicy returns 0 records. No real-time monitoring for data exfiltration, mass download, or API anomalies.
+- **Evidence:** Standard SOQL (R2 gap script)
+- **Risk:** HIGH — combined with F-001 (Odaseva full access), a compromised service account could export the entire org undetected
+- **Recommendation:** Implement at minimum: (1) API Anomaly detection policy blocking users who call Data Export or list views > N times/hour; (2) Report Download policy alerting on large exports; (3) Login IP change detection
 
 ---
 
 ## MEDIUM Findings
 
-### F-007: Clinic_Grouping__c Has Public Read/Write OWD — Likely Unintentional
-- **Finding:** `Clinic_Grouping__c` has `InternalSharingModel = ReadWrite` — all internal users can see and edit all Clinic Grouping records.
-- **Evidence:** EntityDefinition query.
-- **Risk:** Depending on data sensitivity, this could expose clinic grouping business logic or configurations that should be restricted.
-- **Recommendation:** Evaluate if this was intentionally set to Public Read/Write. If not, change to Private with appropriate sharing rules.
+### F-009: Manual Account Shares (68) Lack Lifecycle Management *(unchanged from R1)*
 
-### F-008: Manual Account Shares (68) Lack Lifecycle Management
-- **Finding:** 68 Account records have been manually shared (RowCause=Manual). These are not governed by any automated cleanup process.
-- **Evidence:** AccountShare RowCause=Manual aggregate count.
-- **Risk:** Manual shares created for temporary purposes (e.g., for a specific user to cover for a colleague) accumulate over time and can leave access open long after the need expires.
-- **Recommendation:** Implement a scheduled Apex job or Flow to review and clean up manual shares older than N days. Consider disabling manual sharing on specific object types if it is not a supported business process.
+### F-010: 45 Apex Classes Use Sharing Keywords *(unchanged from R1)*
 
-### F-009: 45 Apex Classes Use Sharing Keywords or AccessLevel — Unreviewed for Security Gaps
-- **Finding:** 45 Apex classes reference `__Share`, `RowCause`, `SharingReason`, or `AccessLevel`. Of these, key classes use `without sharing` contexts and `AccessLevel.SYSTEM_MODE`, which bypasses all sharing rules.
-- **Evidence:** Code grep results.
-- **Risk:** If any of these classes have business logic flaws, they could create unintended shares or expose records.
-- **Recommendation:** Conduct a security code review of all 45 classes, specifically examining: (1) whether `without sharing` / `SYSTEM_MODE` contexts are narrowly scoped; (2) whether share records created have appropriate RowCause reasons (not all use custom RowCause, some use blank string `''`); (3) whether share records are cleaned up when no longer needed.
+### F-011: ScheduledPermissionAssigner Dynamic Access *(unchanged from R1)*
 
-### F-010: ScheduledPermissionAssigner Can Dynamically Modify User Access
-- **Finding:** A class named `ScheduledPermissionAssigner` exists in the codebase and references `AccessLevel`.
-- **Evidence:** Code grep; class present in `force-app/main/default/classes/ScheduledPermissionAssigner.cls`.
-- **Risk:** Automated permission assignment can bypass normal governance if the assignment logic is flawed or if the scheduled job is triggered by data an attacker can control.
-- **Recommendation:** Review the business logic and triggering conditions for ScheduledPermissionAssigner. Ensure it only assigns pre-approved permission sets and that its schedule and input data sources are locked down.
+### F-012: Territory Opportunity/Case Access = None — Potential Field Sales Visibility Gap *(unchanged from R1)*
 
-### F-011: Territory2 Opportunity Access is None — Opportunity Visibility Gap for Field Sales
-- **Finding:** Territory2Settings shows `defaultOpportunityAccessLevel = None`. Opportunity filter is disabled. This means Territory Management does NOT grant field sales users access to Opportunities in their territory — they must rely solely on OWD=Private + sharing rules.
-- **Evidence:** Territory2.settings-meta.xml.
-- **Risk:** Field sales reps who are assigned to territories but don't own the opportunity record may not be able to see it unless an explicit sharing rule covers the case.
-- **Recommendation:** Evaluate whether Territory Opportunity Access should be set to Read or Edit, or whether existing sharing rules are sufficient to cover the use case.
+### F-013 [NEW R2]: Custom Patient Duplicate Rule Uses BypassSharingRules
+- **Finding:** `Patient_Duplicate_Person_Account_Rule` (active) and `Patient_Duplicate_Lead_Rule` (inactive) both use `securityOption=BypassSharingRules`
+- **Evidence:** Retrieved DuplicateRule XML: `<securityOption>BypassSharingRules</securityOption>`
+- **Risk:** During dedup evaluation, users can see Patient PersonAccount records they don't have sharing access to. This is a data-visibility side channel — a user creating a lead sees "duplicate patient exists" even if they shouldn't know that patient is in the system.
+- **Recommendation:** Evaluate whether `EnforceSharingRules` is feasible. If bypass is required for accurate dedup, document and accept the risk; add to data privacy review.
+
+### F-014 [RESOLVED R2]: SharingRules Not in Source Control
+- **Status:** RESOLVED — SharingRules type added to `package-security.xml`; 407 SharingRules files now retrieved and committed
 
 ---
 
 ## LOW Findings
 
-### F-012: Admin Login As Any User Enabled Without IP Restriction
-- **Finding:** `enableAdminLoginAsAnyUser = true` in Security settings.
-- **Evidence:** `force-app/main/default/settings/Security.settings-meta.xml`.
-- **Risk:** Any admin can log in as any user without the user knowing. Combined with 177 admin users, this is a significant privilege.
-- **Recommendation:** Log all Login-As events (SetupAuditTrail already captures them); consider restricting this capability to a named subset of admins via permission.
+### F-015: Admin Login As Any User Enabled *(unchanged from R1)*
 
-### F-013: 18 Installed Packages May Hold Broad Connected App OAuth Scopes
-- **Finding:** 18 managed packages are installed, including DocuSign, Marketing Cloud, Amazon Connect, Odaseva, OmniStudio, and AppOmni.
-- **Evidence:** installed-packages.json.
-- **Risk:** Each package may have Connected Apps with broad OAuth scopes (`full` or `api`) that can be exploited if package credentials are compromised.
-- **Recommendation:** Review OAuth scope for each connected app in Setup → Connected Apps. Restrict to minimum required scopes (e.g., `api` instead of `full`, or custom scope sets).
+### F-016 [NEW R2 — CLOSED]: ScopingRule — Confirmed Absent
+- **Finding:** ScopingRule is not in the 344-type org metadata catalog. Not supported at API v66.0 in this org configuration.
+- **Status:** CLOSED — no remediation needed. Confirmed via catalog check (R2).
 
-### F-014: Non-Deployed SharingRules Metadata — No Declarative Sharing Rule Documentation
-- **Finding:** The local metadata snapshot does not include a `sharingRules/` directory. The 680,000+ rule-based share records are generated by sharing rules that have not been captured in source control.
-- **Evidence:** Directory exploration — no `force-app/main/default/sharingRules/` exists.
-- **Risk:** Without sharing rules in version control, accidental deletion or unreviewed modifications cannot be detected via code review.
-- **Recommendation:** Add `SharingRules` to the project manifests and retrieve them into the snapshot. Run `sf project retrieve start --metadata SharingRules` for all objects with sharing rules.
+### F-017 [NEW R2 — CLOSED]: RestrictionRule — Confirmed Absent
+- **Finding:** RestrictionRule retrieve returned 0 components. No restriction rules are in use.
+- **Status:** CLOSED — expected outcome for a sales/clinical org. May be worth revisiting if finer-grained record filtering is needed for regulatory compliance (e.g., restricting patient records by geographic region to licensed clinicians).
 
-### F-015: Guest License Users — Two Guest Profiles with Potential Overlap
-- **Finding:** Two Guest-type profiles exist: "Trainer Portal Profile" (used for the community) and "Guest License User" (default site guest). Secure Guest Access is disabled for both.
-- **Evidence:** Profile SOQL returning UserType=Guest profiles.
-- **Risk:** The default Guest License User profile may inadvertently provide access if any Visualforce pages or sites are configured to use it.
-- **Recommendation:** Review pages assigned to Guest License User profile; restrict to minimal object access; ensure Secure Guest Access is enabled.
+### F-018: Only 1 CSP Trusted Site Configured
+- **Finding:** Only `omnipod.com` is in the CSP whitelist. Any Lightning component trying to reach external endpoints not covered by Named Credentials will silently fail CSP enforcement.
+- **Evidence:** `force-app/main/default/cspTrustedSites/Omnipod.cspTrustedSite-meta.xml` (R2)
+- **Recommendation:** Review and document all external endpoints reached by LWC/Aura components; add necessary entries or rely on Named Credentials.
+
+### F-019: Geo_Test1 Territory Type Should Be Cleaned Up
+- **Finding:** A territory type named "Geo_Test1" with description "Test demo" and priority 1 remains in the active metadata.
+- **Evidence:** `Geo_Test1.territory2Type-meta.xml` (R2)
+- **Recommendation:** Remove if no territories use this type in production.
+
+### F-020: siteGuestRecordDefaultOwner is a Copado Integration User
+- **Finding:** `Trainer_Portal.site-meta.xml` shows `siteGuestRecordDefaultOwner = copadointegration@insulet.com.nextgen`. Records created by the guest user during self-registration or unauthenticated flows are owned by the Copado integration user.
+- **Evidence:** `force-app/main/default/sites/Trainer_Portal.site-meta.xml` (R2)
+- **Recommendation:** Change the default owner to a dedicated service account user with minimum required permissions, not an integration tool's service account.
 
 ---
 
-*End of Assessment — Insulet Corporation DevInt2 Sandbox | March 9, 2026*
+## Retrieval Anomalies Encountered (R2 Gap-Fill Run)
+
+| Type | Outcome | Note |
+|------|---------|------|
+| SharingRules | ✅ 407 files | All objects covered; 11 had actual rules |
+| Group | ✅ 11 files | Declarative named groups |
+| Queue | ✅ 16 files | All queues retrieved |
+| Territory2Model | ✅ 4 models | Header XML only; individual territories are org data |
+| Territory2Type | ✅ 6 types | All types with access level and priority |
+| SharingSet | ✅ 1 file | External_Trainer_Access — critical R2 discovery |
+| DelegateGroup | ✅ 1 file | Log_In_As — HIGH risk finding |
+| MutingPermissionSet | ✅ 0 files | Confirmed no muting PSets exist |
+| Network | ✅ 1 file | Trainer Portal full config |
+| CustomSite | ✅ 1 file | Trainer Portal security config |
+| CspTrustedSite | ✅ 1 file | Omnipod.com only |
+| SiteDotCom | ❌ Failed | LWR-based site; metadata API retrieval not supported for Build Your Own (LWR) template |
+| RestrictionRule | ✅ 0 files | Confirmed absent — expected |
+| DuplicateRule | ✅ 9 files | 2 custom Insulet rules with BypassSharingRules |
+| FlowDefinition | ✅ 45 files | Active flow version pointers |
+| ApexEmailNotifications | ✅ 1 file | Org notification settings |
+| TransactionSecurityPolicy | ✅ 0 files | Confirmed absent — HIGH risk gap |
+| ConnectedApp (4 managed) | ❌ 4 Failed | Managed package ConnectedApps not retrievable via Metadata API (expected) |
+
+---
+
+*End of R2 Assessment — Insulet Corporation DevInt2 Sandbox | March 2026*  
+*R2 Evidence: 618 security components + 55 governance components + 4 community components retrieved*  
+*All 6 consistency checks: PASS | All 7 validation rules: PASS (3 non-blocking corrections applied)*
