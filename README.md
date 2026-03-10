@@ -116,7 +116,7 @@ All findings are evidence-based. No assumptions were made without a corroboratin
 
 1. **Live SOQL queries** via Salesforce DX MCP (`run_soql_query` tool)
 2. **Tooling API queries** for EntityDefinition (OWD), ObjectPermissions, PermissionSet bypass checks
-3. **Local metadata snapshot** (`insulet-devint2-metadata-snapshot` project) for profiles, permission sets, permission set groups, roles, settings files, and Apex class code
+3. **Local metadata snapshot** (`insulet-devint2-metadata-snapshot` project) for profiles, permission sets, permission set groups, roles, settings files, SharingRules (407 XML files), and Apex class code
 4. **Share record aggregates** for evidence of active sharing mechanisms
 
 ### Prerequisites
@@ -218,8 +218,8 @@ CRITICAL  2. Change OWD on all OrgSync staging objects from ReadWrite→Private;
 HIGH      3. Enable Secure Guest Access in Sharing Settings
 HIGH      4. Replace PermissionsViewAllData=true in Dev Support / Functional
              Analyst perm sets with per-object ViewAllRecords grants
-HIGH      5. Add SharingRules metadata type to the project manifest and
-             retrieve into source control for governance visibility
+HIGH      5. ~~Add SharingRules metadata type to the project manifest and
+             retrieve into source control~~ *(done in R1v1.1 — 407 files in package-security.xml)*
 MEDIUM    6. Implement a scheduled cleanup job for manual AccountShare records
 MEDIUM    7. Security code review of 45 Apex sharing classes — verify
              without sharing scope is narrowly bounded
@@ -243,7 +243,8 @@ LOW       8. Audit production System Administrator count; target <10 active
 | In Scope | Out of Scope / Limitations |
 |----------|---------------------------|
 | OWD (internal + external) for all 720 customizable objects | Production org (this is DevInt2 sandbox) |
-| Territory Management 2.0 active model | Sharing rule XML definitions (not in local metadata snapshot) |
+| Territory Management 2.0 active model | |
+| Sharing rule XML (407 files in metadata snapshot via package-security.xml) | |
 | All 35 profiles, 51 permission sets, 27 PSGs | FLS for all 615 objects (queried only for 8 key objects) |
 | Role hierarchy (26 roles) | Reports and Dashboards folder visibility |
 | 16 queues and 11 public groups | Platform Encryption / Shield configuration (separate assessment) |
